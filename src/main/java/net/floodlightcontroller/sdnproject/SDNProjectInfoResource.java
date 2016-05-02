@@ -30,7 +30,7 @@ public class SDNProjectInfoResource extends ServerResource {
 			return "{\"status\" : \"Error! No data posted.\"}";
 		}
 		
-		System.out.println("\n ***RECEIVED: " + jsonData + "\n");
+		log.info("received json: " + jsonData);
 		
 		try {
 			data = SDNProject.jParse(jsonData);

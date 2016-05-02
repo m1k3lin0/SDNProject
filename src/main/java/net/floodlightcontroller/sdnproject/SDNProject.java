@@ -159,6 +159,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	 *            "user"	: "name",
 	 *            "servers"	: 10,
 	 *        }
+	 * Ignores all other specified fields, if any
 	 * @param jsonData The JSON formatted data
 	 * @return The map of the storage entry
 	 * @throws IOException If there was an error parsing the JSON
