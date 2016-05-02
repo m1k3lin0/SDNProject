@@ -9,13 +9,13 @@ import org.restlet.resource.ServerResource;
 public class SDNProjectInfoResource extends ServerResource{
 	
 	@Get("json")
-	public String printClients(){
+	public String printClients(String fmJson){
 		String[] array = new String[10];
 		array[0] = "name";
 		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
 		System.out.println("LOLLIPOP" + storageSource.executeQuery("users", array, null, null).toString());
-		return storageSource.getRow("users", "name").toString();
-		
+		//return storageSource.getRow("users", "name").toString();
+		return fmJson;
 	}
 	
 
