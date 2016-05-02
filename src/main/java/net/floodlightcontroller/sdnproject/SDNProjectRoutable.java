@@ -7,7 +7,10 @@ import org.restlet.routing.Router;
 import net.floodlightcontroller.restserver.RestletRoutable;
 
 public class SDNProjectRoutable implements RestletRoutable {
-
+	
+    /**
+     * Create the Restlet router and bind to the proper resources.
+     */
 	@Override
 	public Restlet getRestlet(Context context) {
 		Router router = new Router(context);
@@ -17,7 +20,10 @@ public class SDNProjectRoutable implements RestletRoutable {
 		router.attach("/info", SDNProjectInfoResource.class);
 		return router;
 	}
-
+	
+    /**
+     * Set the base path for the Topology
+     */
 	@Override
 	public String basePath() {
 		return "/wm/SDNProject";
