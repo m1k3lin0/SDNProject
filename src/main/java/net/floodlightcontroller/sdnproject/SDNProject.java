@@ -38,7 +38,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
 
 	//count the available servers, make private and implement method get and update?
-	protected static int available_servers;
+	//get total number from python script
+	protected static int available_servers = 1000;
 	
 	/* module constant */
 	
@@ -61,8 +62,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
-		//called when a row of the table has been inserted or modified
-		System.out.println("SONO STATO CHIAMATO \n");
+		//called when a row of the table has been inserted or modified	
+		log.info(": user inserted in table {}: " + rowKeys.toString(), tableName);
 	}
 	
 	@Override
@@ -135,7 +136,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			log.debug("created table " + TABLE_USERS + ", with primary key " + COLUMN_U_NAME);
 
 
-		System.out.println("TABLES CREATED: " + storageSourceService.getAllTableNames());
+		log.info("TABLES CREATED: " + storageSourceService.getAllTableNames());
 				
 		// column user is to be indexed
 		Set<String> indexedColumns = new HashSet<String>();
