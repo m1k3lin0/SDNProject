@@ -1,9 +1,11 @@
 package net.floodlightcontroller.sdnproject;
 
+import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceService;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 
 import org.restlet.resource.Get;
@@ -30,6 +32,8 @@ public class SDNProjectInfoResource extends ServerResource {
 			return "{\"status\" : \"Error! No data posted.\"}";
 		}
 		
+		System.out.println("TABLES CREATED: " + storageSource.getAllTableNames());
+		
 		log.info("received json: " + jsonData);
 		
 		try {
@@ -49,6 +53,16 @@ public class SDNProjectInfoResource extends ServerResource {
 		 * query servers table to find all servers associated to user
 		 * return list of server's addresses in json format
 		 * */
+		
+		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_USERS, 
+				new String[] {SDNProject.COLUMN_U_NAME, SDNProject.COLUMN_U_SERVERS}, null, null);
+		Map<String, Object> row;
+		int i=0;
+		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); i++) {
+			row = it.next().getRow();
+			System.out.println(this.getName() + ": ROW(" + i + ") = " + row.toString());
+		}
+		
 
 		return ret;
 	}

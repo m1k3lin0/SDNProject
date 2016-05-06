@@ -41,11 +41,12 @@ public class SDNProjectRequestResource extends ServerResource{
 		 * */
 		
 		/* values represents the row to be inserted, series of pairs (column_name, value) */
-		//values.put(SDNProject.COLUMN_S_USER, "nomeprova");
-		//storageSource.insertRowAsync(SDNProject.TABLE_NAME, values); //crea una nuova riga nella tabella users
+		values.put(SDNProject.COLUMN_S_USER, "trucebaldazzi");
+		values.put(SDNProject.COLUMN_U_SERVERS, 10);
+		storageSource.insertRowAsync(SDNProject.TABLE_USERS, values); //crea una nuova riga nella tabella users
 		
-	//	System.out.println("*************************TIE"+ storageSource.getRowAsync("users", "name").toString() + "\n");
-
+		System.out.println(this.getName() + ": new values inserted in table " + SDNProject.TABLE_USERS);
+		
         setStatus(Status.SUCCESS_OK);
 
         return "{\"status\" : \"success\", \"details\" : \"firewall running\"}";

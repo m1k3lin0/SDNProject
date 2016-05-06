@@ -30,13 +30,13 @@ import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.restserver.IRestApiService;
-import net.floodlightcontroller.staticflowentry.StaticFlowEntryPusher;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
 
 public class SDNProject implements IOFMessageListener, IFloodlightModule, IStorageSourceListener {
 
-	protected static Logger log;
+	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
+
 	//count the available servers, make private and implement method get and update?
 	protected static int available_servers;
 	
@@ -113,7 +113,6 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	public void init(FloodlightModuleContext context)
 			throws FloodlightModuleException {
 		floodlightProviderService = context.getServiceImpl(IFloodlightProviderService.class);
-		log = LoggerFactory.getLogger(SDNProject.class);
 		restAPIService = context.getServiceImpl(IRestApiService.class);
 		storageSourceService = context.getServiceImpl(IStorageSourceService.class);
 	}
@@ -131,6 +130,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		// column name is primary key
 		storageSourceService.setTablePrimaryKeyName(TABLE_USERS, COLUMN_U_NAME);
 		storageSourceService.addListener(TABLE_USERS, this);
+		
+		if(log.isDebugEnabled())
+			log.debug("created table " + TABLE_USERS + ", with primary key " + COLUMN_U_NAME);
+
+
+		System.out.println("TABLES CREATED: " + storageSourceService.getAllTableNames());
 				
 		// column user is to be indexed
 		Set<String> indexedColumns = new HashSet<String>();
