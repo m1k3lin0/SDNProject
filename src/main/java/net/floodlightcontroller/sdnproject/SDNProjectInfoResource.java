@@ -1,7 +1,9 @@
 package net.floodlightcontroller.sdnproject;
 
+import net.floodlightcontroller.storage.IPredicate;
 import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceService;
+import net.floodlightcontroller.storage.OperatorPredicate;
 
 import java.io.IOException;
 import java.util.HashMap;
@@ -43,8 +45,18 @@ public class SDNProjectInfoResource extends ServerResource {
 			log.error("error while parsing received data: " + jsonData, e);
 			return "{\"status\" : \"Error retrieving client info, see log for details.\"}";
 		}
+		String client = (String)data.get(SDNProject.COLUMN_U_NAME); //
+		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER,OperatorPredicate.Operator.EQ,client);
 		
-		ret = 	"{ \"user\" : \" " + data.get(SDNProject.COLUMN_U_NAME) + "\","
+		Map<String,Object> values = new HashMap<String,Object>();
+		values.put(SDNProject.COLUMN_S_ID, "ALEXNONECAPACE");
+		values.put(SDNProject.COLUMN_S_USER, "trignoleomerda");
+		values.put(SDNProject.COLUMN_S_VIRTUAL, "indirizzo di prova");
+		storageSource.insertRowAsync(SDNProject.TABLE_SERVERS, values); //crea una nuova riga nella tabella users
+		
+		
+//		Map<String,Object> row;
+		/*ret = 	"{ \"user\" : \" " + data.get(SDNProject.COLUMN_U_NAME) + "\","
 				+ "\"servers\" : \" " + data.get(SDNProject.COLUMN_U_SERVERS) + "\""
 				+ "}";
 		/* TODO
@@ -54,14 +66,15 @@ public class SDNProjectInfoResource extends ServerResource {
 		 * return list of server's addresses in json format
 		 * */
 		
-		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_USERS, 
-				new String[] {SDNProject.COLUMN_U_NAME, SDNProject.COLUMN_U_SERVERS}, null, null);
+		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
+			new String[] {SDNProject.COLUMN_S_VIRTUAL}, predicate, null);
 		Map<String, Object> row;
 		int i=0;
 		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); i++) {
 			row = it.next().getRow();
-			System.out.println(this.getName() + ": ROW(" + i + ") = " + row.toString());
+			log.info("PORCO DUEEEEEEEEEEEEEEEEEEEEEEEEEEEE **** ROW(" + i + ") = " + row.get(SDNProject.COLUMN_S_VIRTUAL).toString());
 		}
+		
 		
 
 		return ret;
