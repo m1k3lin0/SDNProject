@@ -76,7 +76,7 @@ public class SDNProjectInfoResource extends ServerResource {
 		/*-----------------------------------------------------------------*/
 		
 		/* check if username exists */
-		if(SDNUtils.userExists(storageSource, user)) {
+		if(!SDNUtils.userExists(storageSource, user)) {
 			log.error("error while fetching information, user {} not existent!", user);
 			return "{\"status\" : \"User not existent, check log for details \"}";
 		}
