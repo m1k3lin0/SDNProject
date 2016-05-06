@@ -1,23 +1,14 @@
 package net.floodlightcontroller.sdnproject;
-//modifica di prova
 
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
 
-import net.floodlightcontroller.storage.IPredicate;
-import net.floodlightcontroller.storage.IQuery;
-import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceService;
-import net.floodlightcontroller.storage.OperatorPredicate;
-import net.floodlightcontroller.storage.OperatorPredicate.Operator;
 
-import org.apache.derby.impl.sql.compile.Predicate;
 import org.restlet.data.Status;
 import org.restlet.resource.Post;
-import org.restlet.resource.Put;
 import org.restlet.resource.ServerResource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -84,7 +75,7 @@ public class SDNProjectRequestResource extends ServerResource{
 		}
 		
 		/* check if username already existent */
-		if(userExists(SDNProject.TABLE_USERS, user)) {
+		if(SDNUtils.userExists(storageSource, user)) {
 			log.error("error while creating new user, user {} already existent!", user);
 			return "{\"status\" : \"User already existent, see log for details.\"}";
 		}
@@ -96,29 +87,13 @@ public class SDNProjectRequestResource extends ServerResource{
 		// add new row
 		storageSource.insertRowAsync(SDNProject.TABLE_USERS, row);
 		
-		/* TODO fetch free server adrresses & update data in servers table */
+		/* TODO fetch free server addresses & update data in servers table */
 
 		/* TODO define new rules */
 		
         setStatus(Status.SUCCESS_OK);
 
         return "{\"status\" : \"Success\", \"details\" : \"Run /info to get informations\"}";
-		
 	}
-	
-	/**
-	 * check if a user is already in the table
-	 * @param tableName: name of the table to check in
-	 * @param user:		 name of the user
-	 * @return true if the user already exists in the table
-	 * */
-	private boolean userExists(String tableName, String user){
-		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
-		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_U_NAME, Operator.EQ, user);
-		IResultSet resultSet = storageSource.executeQuery(tableName, new String[] {SDNProject.COLUMN_U_NAME}, predicate, null);
-		if(resultSet.iterator().hasNext())
-			return true;
-		return false;
-		
-	}
+
 }
