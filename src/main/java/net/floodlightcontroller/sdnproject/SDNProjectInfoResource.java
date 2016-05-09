@@ -48,7 +48,7 @@ public class SDNProjectInfoResource extends ServerResource {
 		
 		/* parse json data */
 		try {
-			data = SDNProject.jParse(jsonData);
+			data = SDNUtils.jParse(jsonData);
 		}
 		catch(IOException e) {
 			log.error("error while parsing received data: " + jsonData, e);
@@ -84,6 +84,7 @@ public class SDNProjectInfoResource extends ServerResource {
 		/* create the answer in json format */
 		log.info("creating json answer");
 		ret = "{ \"user\" : \"" + user + "\", \"servers\" : [";
+		
 		/* query the servers table */
 		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER,OperatorPredicate.Operator.EQ,user);
 		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 

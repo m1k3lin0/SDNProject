@@ -53,7 +53,7 @@ public class SDNProjectRequestResource extends ServerResource{
 		log.info("received json: " + jsonData);
 		
 		try {
-			data = SDNProject.jParse(jsonData);
+			data = SDNUtils.jParse(jsonData);
 		}
 		catch(IOException e) {
 			log.error("error while parsing received data: " + jsonData, e);
@@ -91,9 +91,11 @@ public class SDNProjectRequestResource extends ServerResource{
 
 		/* TODO define new rules */
 		
+		SDNProject.available_servers -= servers;
+		
         setStatus(Status.SUCCESS_OK);
 
-        return "{\"status\" : \"Success\", \"details\" : \"Run /info to get informations\"}";
+        return "{\"status\" : \"Success\", \"details\" : \"Run /info to get informations.\"}";
 	}
 
 }

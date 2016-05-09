@@ -3,7 +3,6 @@
  */
 package net.floodlightcontroller.sdnproject;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -13,13 +12,10 @@ import java.util.Set;
 
 import org.projectfloodlight.openflow.protocol.OFMessage;
 import org.projectfloodlight.openflow.protocol.OFType;
+import org.python.core.PyObject;
+import org.python.util.PythonInterpreter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import com.fasterxml.jackson.core.JsonParseException;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import com.fasterxml.jackson.databind.MappingJsonFactory;
 
 import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.IFloodlightProviderService;
@@ -37,9 +33,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
 	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
 
+	/* network parameters */
 	//count the available servers, make private and implement method get and update?
 	//get total number from python script
-	protected static int available_servers = 1000;
+	PythonInterpreter pInterpreter = new PythonInterpreter();
+	protected static int tot_servers;
+	protected static int available_servers;
 	
 	/* module constant */
 	
@@ -124,6 +123,16 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		restAPIService.addRestletRoutable(new SDNProjectRoutable());
 		//floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
 		
+		/* initialize network parameters */
+		/*PythonInterpreter.initialize(System.getProperties(), System.getProperties(), new String[0]);
+		pInterpreter = new PythonInterpreter();
+		pInterpreter.execfile("src/main/python/topology.py");
+		PyObject str = pInterpreter.eval("repr(retrieveData().getTotServers())"); */
+		tot_servers = 40;
+		available_servers = tot_servers;
+		
+		log.info("TOT SERVERS: " + tot_servers);
+		
 		/* create tables */
 		
 		// create users table
@@ -155,69 +164,6 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
 		// TODO Auto-generated method stub
 		return null;
-	}
-	
-	/**
-	 * Parses a JSON data into a Map
-	 * Exploits jackson
-	 * Expects a string in JSON that follows the following syntax:
-	 *        {
-	 *            "user"	: "name",
-	 *            "servers"	: 10,
-	 *        }
-	 * Ignores all other specified fields, if any
-	 * @param jsonData The JSON formatted data
-	 * @return The map of the storage entry
-	 * @throws IOException If there was an error parsing the JSON
-	 */
-	public static Map<String, Object> jParse(String jsonData) throws IOException {
-		Map<String, Object> entry = new HashMap<String, Object>();
-		MappingJsonFactory f = new MappingJsonFactory();
-		JsonParser parser;
-
-		try {
-			parser = f.createParser(jsonData);
-		} catch (JsonParseException e) {
-			throw new IOException(e);
-		}
-
-		// first call to next should return START_OBJECT
-		parser.nextToken();
-		if (parser.getCurrentToken() != JsonToken.START_OBJECT) {
-			throw new IOException("Expected START_OBJECT");
-		}
-
-		// last call to next should return END_OBJECT
-		while (parser.nextToken() != JsonToken.END_OBJECT) {
-			if (parser.getCurrentToken() != JsonToken.FIELD_NAME) {
-				throw new IOException("Expected FIELD_NAME");
-			}
-
-			String current = parser.getCurrentName();
-			parser.nextToken();
-
-			/* name of json fields follow the defined column names */
-			switch (current) {
-			case SDNProject.COLUMN_U_NAME:
-				entry.put(SDNProject.COLUMN_U_NAME, parser.getText());
-				break;
-			case SDNProject.COLUMN_U_SERVERS:
-				//check if numeric or "all"
-				//if(parser.getCurrentToken()==JsonToken.VALUE_STRING)
-				//getText() works for any token type
-				entry.put(SDNProject.COLUMN_U_SERVERS, parser.getText());
-				break;
-			default:
-				log.error("Could not decode field from JSON string: {}", current);
-				break;
-			}
-			
-			if(log.isDebugEnabled()) {
-				log.debug("parsing field {}, with value {}", current, parser.getText());
-			}
-		}
-		
-		return entry;
 	}
 
 }
