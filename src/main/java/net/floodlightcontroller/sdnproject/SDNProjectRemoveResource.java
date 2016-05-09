@@ -95,9 +95,10 @@ public class SDNProjectRemoveResource extends ServerResource {
 		}
 		
 		log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
-		
-		/* TODO fetch free server addresses & update data in servers table */
 
+		/* TODO fetch free server addresses & update data in servers table */
+		SDNUtils.removeServers(storageSource, servers, user);
+		
 		/* TODO remove rules */
 
         setStatus(Status.SUCCESS_OK);

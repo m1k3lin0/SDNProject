@@ -32,7 +32,7 @@ public final class SDNUtils {
 	 *            "servers"	: 10,
 	 *        }
 	 * Ignores all other specified fields, if any
-	 * @param jsonData The JSON formatted data
+	 * @param jsonData is The JSON formatted data
 	 * @return The map of the storage entry
 	 * @throws IOException If there was an error parsing the JSON
 	 */
@@ -91,8 +91,8 @@ public final class SDNUtils {
 
 	/**
 	 * checks if a user is already in the users table
-	 * @param storageSource: reference to the storage source containing the table
-	 * @param user:	name of the user
+	 * @param storageSource is reference to the storage source containing the table
+	 * @param user is	name of the user
 	 * @return true if the user already exists in the table
 	 * */
 	public static boolean userExists(IStorageSourceService storageSource, String user) {
@@ -105,8 +105,8 @@ public final class SDNUtils {
 	
 	/**
 	 * fetches the number of servers belonging to a user
-	 * @param storageSource: reference to the storage source containing the table
-	 * @param user: name of the user
+	 * @param storageSource is reference to the storage source containing the table
+	 * @param user is name of the user
 	 * @return the number of servers that belongs to the user 
 	 * */
 	public static int getServers(IStorageSourceService storageSource, String user) {
@@ -130,10 +130,11 @@ public final class SDNUtils {
 	
 	/**
 	 * assigns requested server to a specific user by updating the servers table
-	 * inserts virtual addresses
-	 * @param servers: the number of servers requested
-	 * @param user: the user requiring the servers
-	 * @param storageSource: reference to the storage source containing the table
+	 * assigns new virtual addresses, starting from 1 if it is a new request
+	 * starting from the last one if it is an add request
+	 * @param servers is the number of servers requested
+	 * @param user is the user requiring the servers
+	 * @param storageSource is reference to the storage source containing the table
 	 * */
 	public static void assignServers(IStorageSourceService storageSource, int servers, String user) {
 		String virtualAddr = null;
@@ -159,8 +160,84 @@ public final class SDNUtils {
 	}
 	
 	/**
+	 * remove a certain number of server from the specified client by resetting to null
+	 * fields user and virtual_address relative to the entries with the highest virtual_addresses
+	 * @param servers is the number of servers to remove
+	 * @param user is the user removing the servers
+	 * @param storageSource is reference to the storage source containing the table
+	 * */
+	public static void removeServers(IStorageSourceService storageSource, int servers, String user) {
+		// if number of specified servers >= owned servers, remove all servers
+		int max = getServers(storageSource, user);
+		servers = (servers>max)?max:servers;
+		
+		for(int i=0; i<servers; i++) {
+			Map<String,Object> row = new HashMap<String,Object>();
+			Integer ID = getLastAssignedServerID(storageSource, user);
+			row.put(SDNProject.COLUMN_S_USER, null);
+			row.put(SDNProject.COLUMN_S_VIRTUAL, null);
+			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
+			log.info("removeServers: removed server " + ID + " to user {}. VIR: {}", user);
+		}
+	}
+	
+	/**
+	 * finds the ID of the server with highest virtual address assigned to the specified user
+	 * @param storageSource is reference to the storage source containing the table
+	 * @param user is the user whose server are to be checked
+	 * @return the ID of the server with the highest virtual address
+	 * */
+	public static int getLastAssignedServerID(IStorageSourceService storageSource, String user) {
+		Integer ID = 0;
+		String max = "0.0.0.0";
+		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, OperatorPredicate.Operator.EQ, user);
+		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
+			new String[] {SDNProject.COLUMN_S_ID, SDNProject.COLUMN_S_VIRTUAL}, predicate, null);
+		Map<String, Object> row;
+		
+		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
+			row = it.next().getRow();
+			String address = (String)row.get(SDNProject.COLUMN_S_VIRTUAL);
+			if(isHigher(address, max)) {
+				// address is higher than max
+				max = address;
+				ID = (Integer)row.get(SDNProject.COLUMN_S_ID);
+			}
+		}
+		
+		return ID;
+	}
+	
+	/**
+	 * compares two IP addresses
+	 * @param newIP is the first IP address
+	 * @param oldIP is the second IP address
+	 * @return true if newIP is higher than oldIP 
+	 * */
+	private static boolean isHigher(String newIP, String oldIP) {
+		String splittedNew[] = newIP.split("\\.");
+		String splittedOld[] = oldIP.split("\\.");
+		int oldInt = Integer.parseInt(splittedOld[2]);
+		int newInt = Integer.parseInt(splittedNew[2]);
+		
+		//check penultimate part of the address
+		if(newInt>oldInt)
+			return true;
+		if(newInt<oldInt)
+			return false;
+		
+		//check last part of the address
+		oldInt = Integer.parseInt(splittedOld[3]);
+		newInt = Integer.parseInt(splittedNew[3]);
+		if(newInt>oldInt)
+			return true;
+		return false;		
+	}
+	
+	
+	/**
 	 * finds in the servers table the first free server
-	 * @param storageSource: reference to the storage source containing the table
+	 * @param storageSource is reference to the storage source containing the table
 	 * @return the ID of the first free server found
 	 * */
 	public static int getFirstFreeServer(IStorageSourceService storageSource) {
