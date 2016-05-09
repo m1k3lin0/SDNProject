@@ -34,7 +34,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	/* network parameters */
 	//count the available servers, make private and implement method get and update?
 	//get total number from python script and initialize in init
-	protected static final int tot_servers = 40;
+	protected static final int tot_servers = 1000;
 	protected static int available_servers;
 	
 	public static final String FIRST_VIRTUAL_ADDR = "192.168.";
@@ -168,10 +168,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	 * initializes the servers table with ID and Physical IP address
 	 * ID is an incremental number, starting from 1
 	 * IP address is assigned in an incremental manner starting from 10.0.0.1
+	 * all other fields are filled with null value
 	 * @param servers : total number of servers
 	 * */
 	public void initServersTable(int servers){
-		for (Integer i=1; i<= servers; i++) {
+		Integer ID = 1;
+		for (int i=1; i<= servers; i++) {
 			//skip addresses ending with 0
 			if (i%256 == 0) {
 				servers++; 
@@ -179,10 +181,13 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			}
 			// prepare row
 			Map<String,Object> row = new HashMap<String,Object>();			
-			row.put(COLUMN_S_ID, i);
+			row.put(COLUMN_S_ID, ID);
 			row.put(COLUMN_S_PHYSICAL, FIRST_PHYSICAL_ADDR + i/256 +"." + (i%256));
+			row.put(COLUMN_S_USER, null);
+			row.put(COLUMN_S_VIRTUAL, null);
 			
 			storageSourceService.insertRow(TABLE_SERVERS, row);
+			ID++;
 			
 			if (log.isDebugEnabled())
 				log.info("new server added in table: " + row.toString()); //print the inserted server attributes

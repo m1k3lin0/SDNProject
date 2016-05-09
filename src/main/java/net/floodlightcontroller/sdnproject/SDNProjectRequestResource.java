@@ -6,6 +6,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 import net.floodlightcontroller.storage.IStorageSourceService;
+import net.floodlightcontroller.storage.OperatorPredicate;
+import net.floodlightcontroller.storage.OperatorPredicate.Operator;
 
 import org.restlet.data.Status;
 import org.restlet.resource.Post;
@@ -80,6 +82,9 @@ public class SDNProjectRequestResource extends ServerResource{
 			return "{\"status\" : \"User already existent, see log for details.\"}";
 		}
 		
+		/* fetch free server addresses & update data in servers table */
+		SDNUtils.assignServers(storageSource, servers, user);
+		
 		/* insert data in users table */
 		// prepare row
 		row.put(SDNProject.COLUMN_U_NAME, user);
@@ -87,10 +92,8 @@ public class SDNProjectRequestResource extends ServerResource{
 		// add new row
 		storageSource.insertRowAsync(SDNProject.TABLE_USERS, row);
 		
-		/* TODO fetch free server addresses & update data in servers table */
-
 		/* TODO define new rules */
-		
+
 		SDNProject.available_servers -= servers;
 		
         setStatus(Status.SUCCESS_OK);

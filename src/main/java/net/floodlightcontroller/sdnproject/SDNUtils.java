@@ -118,7 +118,7 @@ public final class SDNUtils {
 		// COLUMN_U_NAME is primary key, hence only one result is possible
 		try {
 			row = resultSet.iterator().next().getRow();
-			log.info("row : " + row.toString());
+			log.info("getServers: row: " + row.toString());
 			servers = (int)row.get(SDNProject.COLUMN_U_SERVERS);
 		}
 		catch(NoSuchElementException e) {
@@ -127,4 +127,59 @@ public final class SDNUtils {
 		
 		return servers;
 	}
+	
+	/**
+	 * assigns requested server to a specific user by updating the servers table
+	 * inserts virtual addresses
+	 * @param servers: the number of servers requested
+	 * @param user: the user requiring the servers
+	 * @param storageSource: reference to the storage source containing the table
+	 * */
+	public static void assignServers(IStorageSourceService storageSource, int servers, String user) {
+		String virtualAddr = null;
+		int previous = 0;
+		// if user already existent, start from last assigned virtual address
+		if(userExists(storageSource, user)) {
+			previous = getServers(storageSource, user);
+		}
+		for(int i=previous+1; i<=(servers+previous); i++) {
+			if(i%256 ==0 ) {
+				servers++;
+				continue;
+			}
+			Map<String,Object> row = new HashMap<String,Object>();
+			Integer ID = SDNUtils.getFirstFreeServer(storageSource);
+			log.info("assignServers: first free server ID: " + ID);
+			virtualAddr = SDNProject.FIRST_VIRTUAL_ADDR + i/256 + "." + i%256; 
+			row.put(SDNProject.COLUMN_S_USER, user);
+			row.put(SDNProject.COLUMN_S_VIRTUAL, virtualAddr);
+			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
+			log.info("assignServers: assigned server " + ID + " to user {}. VIR: {}", user, virtualAddr);
+		}
+	}
+	
+	/**
+	 * finds in the servers table the first free server
+	 * @param storageSource: reference to the storage source containing the table
+	 * @return the ID of the first free server found
+	 * */
+	public static int getFirstFreeServer(IStorageSourceService storageSource) {
+		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, Operator.EQ, null);
+		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
+				new String[] {SDNProject.COLUMN_S_ID}, predicate, null);
+		Map<String, Object> row;
+		int ID = -1;
+		// return the first result
+		try {
+			row = resultSet.iterator().next().getRow();
+			log.info("getFirstFreeServer: row : " + row.toString());
+			ID = (int)row.get(SDNProject.COLUMN_S_ID);
+		}
+		catch(NoSuchElementException e) {
+			log.error("No free servers available!", e);
+		}
+		
+		return ID;
+	}
+	
 }

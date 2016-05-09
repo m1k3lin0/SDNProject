@@ -77,6 +77,9 @@ public class SDNProjectAddResource extends ServerResource {
 			log.error("error while fetching user, user {} not existent!", jsonData);
 			return "{\"status\" : \"User not existent, see log for details.\"}";
 		}
+
+		/* fetch free server addresses & update data in servers table */
+		SDNUtils.assignServers(storageSource, servers, user);
 		
 		/* update users table */
 		int tot_servers = SDNUtils.getServers(storageSource, user) + servers;
@@ -84,11 +87,9 @@ public class SDNProjectAddResource extends ServerResource {
 		storageSource.updateRow(SDNProject.TABLE_USERS, user, row);
 		
 		log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
-		
-		/* TODO fetch free server addresses & update data in servers table */
 
 		/* TODO define new rules */
-		
+
 		SDNProject.available_servers -= servers;
 
         setStatus(Status.SUCCESS_OK);
