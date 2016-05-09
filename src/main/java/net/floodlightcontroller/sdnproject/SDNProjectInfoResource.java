@@ -58,7 +58,7 @@ public class SDNProjectInfoResource extends ServerResource {
 		String user = (String)data.get(SDNProject.COLUMN_U_NAME); //
 		
 		/* INSERIMENTI DI PROVA ---> VANNO TOLTI PERCHE' LA TABELLA NON VIENE RIEMPITA QUI */
-		Map<String,Object> values = new HashMap<String,Object>();
+		/*Map<String,Object> values = new HashMap<String,Object>();
 		values.put(SDNProject.COLUMN_S_ID, "ALEXNONECAPACE");
 		values.put(SDNProject.COLUMN_S_USER, "trignoleomerda");
 		values.put(SDNProject.COLUMN_S_VIRTUAL, "indirizzo di prova");
@@ -96,6 +96,7 @@ public class SDNProjectInfoResource extends ServerResource {
 			if(it.hasNext()) ret+= ",";
 		}
 		ret += "] }";
+		
 
 		return ret;
 	}

@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
@@ -26,8 +27,10 @@ import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.restserver.IRestApiService;
+import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
+import net.floodlightcontroller.storage.OperatorPredicate;
 
 public class SDNProject implements IOFMessageListener, IFloodlightModule, IStorageSourceListener {
 
@@ -36,10 +39,10 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	/* network parameters */
 	//count the available servers, make private and implement method get and update?
 	//get total number from python script
-	PythonInterpreter pInterpreter = new PythonInterpreter();
+	//PythonInterpreter pInterpreter = new PythonInterpreter();
 	protected static int tot_servers;
 	protected static int available_servers;
-	
+
 	/* module constant */
 	
 	// table of servers
@@ -62,12 +65,14 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
 		//called when a row of the table has been inserted or modified	
-		log.info(": user inserted in table {}: " + rowKeys.toString(), tableName);
+		log.info(": row inserted in table {} - " + "ID:" + rowKeys.toString(), tableName);
+			
 	}
 	
 	@Override
 	public void rowsDeleted(String tableName, Set<Object> rowKeys){
 		//called when a row of the table has been updated
+		log.info(": row deleted from table {} - " + "ID:" + rowKeys.toString(), tableName);
 	}
 	
 	@Override
@@ -134,30 +139,36 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		log.info("TOT SERVERS: " + tot_servers);
 		
 		/* create tables */
-		
-		// create users table
+				
+		/* CREATE USERS TABLE */
 		storageSourceService.createTable(TABLE_USERS, null);
 		// column name is primary key
 		storageSourceService.setTablePrimaryKeyName(TABLE_USERS, COLUMN_U_NAME);
 		storageSourceService.addListener(TABLE_USERS, this);
 		
+		
 		if(log.isDebugEnabled())
 			log.debug("created table " + TABLE_USERS + ", with primary key " + COLUMN_U_NAME);
 
 
-		log.info("TABLES CREATED: " + storageSourceService.getAllTableNames());
-				
+		
+		/* CREATE SERVERS TABLE */
 		// column user is to be indexed
 		Set<String> indexedColumns = new HashSet<String>();
-		indexedColumns.add(COLUMN_S_USER);
-		// create servers table
+		indexedColumns.add(COLUMN_S_USER);				
 		storageSourceService.createTable(TABLE_SERVERS, indexedColumns);
 		// column id is primary key
 		storageSourceService.setTablePrimaryKeyName(TABLE_SERVERS, COLUMN_S_ID);
 		storageSourceService.addListener(TABLE_SERVERS, this);
+
+		if(log.isDebugEnabled())
+			log.debug("created table " + TABLE_SERVERS + ", with primary key " + COLUMN_S_ID);
+
+		//add entries to the servers table (all the server physical addresses and IDs)
+		initServersTable(tot_servers);
 		
-		//TODO add entries to the servers table (all the server physical addresses and IDs)
-	}
+
+}
 
 	@Override
 	public net.floodlightcontroller.core.IListener.Command receive(
@@ -165,5 +176,22 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		// TODO Auto-generated method stub
 		return null;
 	}
-
+	
+	/**
+	 * */
+	public void initServersTable(int servers){
+		for (Integer i=1; i<= servers; i++) {
+			// initialize the row
+			if (i%256 == 0) continue;
+			Map<String,Object> row = new HashMap<String,Object>();			
+			row.put(COLUMN_S_ID, i);
+			row.put(COLUMN_S_PHYSICAL, "10.0."+ i/256 +"." + (i%256));
+			storageSourceService.insertRow(TABLE_SERVERS, row);
+			
+			if (log.isDebugEnabled())
+				log.info("new server added in table: " + row.toString()); //print the inserted server attributes
+		
+		}
+			
+	}
 }
