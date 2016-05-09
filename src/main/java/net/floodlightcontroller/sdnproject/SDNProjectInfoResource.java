@@ -1,6 +1,5 @@
 package net.floodlightcontroller.sdnproject;
 
-import net.floodlightcontroller.storage.IPredicate;
 import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceService;
 import net.floodlightcontroller.storage.OperatorPredicate;
@@ -83,7 +82,8 @@ public class SDNProjectInfoResource extends ServerResource {
 		
 		/* create the answer in json format */
 		log.info("creating json answer");
-		ret = "{ \"user\" : \"" + user + "\", \"servers\" : [";
+		ret = "{ \"user\" : \"" + user + "\", \"servers\" : " + SDNUtils.getServers(storageSource, user) 
+				+ ", \"addresses\" : [";
 		
 		/* query the servers table */
 		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER,OperatorPredicate.Operator.EQ,user);

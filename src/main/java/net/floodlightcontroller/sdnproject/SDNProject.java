@@ -7,14 +7,11 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 
 import org.projectfloodlight.openflow.protocol.OFMessage;
 import org.projectfloodlight.openflow.protocol.OFType;
-import org.python.core.PyObject;
-import org.python.util.PythonInterpreter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -27,10 +24,8 @@ import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
 import net.floodlightcontroller.restserver.IRestApiService;
-import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
-import net.floodlightcontroller.storage.OperatorPredicate;
 
 public class SDNProject implements IOFMessageListener, IFloodlightModule, IStorageSourceListener {
 
@@ -38,10 +33,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
 	/* network parameters */
 	//count the available servers, make private and implement method get and update?
-	//get total number from python script
-	//PythonInterpreter pInterpreter = new PythonInterpreter();
-	protected static int tot_servers;
+	//get total number from python script and initialize in init
+	protected static final int tot_servers = 40;
 	protected static int available_servers;
+	
+	public static final String FIRST_VIRTUAL_ADDR = "192.168.";
+	public static final String FIRST_PHYSICAL_ADDR = "10.0.";
 
 	/* module constant */
 	
@@ -129,11 +126,6 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		//floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
 		
 		/* initialize network parameters */
-		/*PythonInterpreter.initialize(System.getProperties(), System.getProperties(), new String[0]);
-		pInterpreter = new PythonInterpreter();
-		pInterpreter.execfile("src/main/python/topology.py");
-		PyObject str = pInterpreter.eval("repr(retrieveData().getTotServers())"); */
-		tot_servers = 40;
 		available_servers = tot_servers;
 		
 		log.info("TOT SERVERS: " + tot_servers);
@@ -146,12 +138,9 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		storageSourceService.setTablePrimaryKeyName(TABLE_USERS, COLUMN_U_NAME);
 		storageSourceService.addListener(TABLE_USERS, this);
 		
-		
 		if(log.isDebugEnabled())
 			log.debug("created table " + TABLE_USERS + ", with primary key " + COLUMN_U_NAME);
 
-
-		
 		/* CREATE SERVERS TABLE */
 		// column user is to be indexed
 		Set<String> indexedColumns = new HashSet<String>();
@@ -166,8 +155,6 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
 		//add entries to the servers table (all the server physical addresses and IDs)
 		initServersTable(tot_servers);
-		
-
 }
 
 	@Override
@@ -178,19 +165,27 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	}
 	
 	/**
+	 * initializes the servers table with ID and Physical IP address
+	 * ID is an incremental number, starting from 1
+	 * IP address is assigned in an incremental manner starting from 10.0.0.1
+	 * @param servers : total number of servers
 	 * */
 	public void initServersTable(int servers){
 		for (Integer i=1; i<= servers; i++) {
-			// initialize the row
-			if (i%256 == 0) continue;
+			//skip addresses ending with 0
+			if (i%256 == 0) {
+				servers++; 
+				continue;
+			}
+			// prepare row
 			Map<String,Object> row = new HashMap<String,Object>();			
 			row.put(COLUMN_S_ID, i);
-			row.put(COLUMN_S_PHYSICAL, "10.0."+ i/256 +"." + (i%256));
+			row.put(COLUMN_S_PHYSICAL, FIRST_PHYSICAL_ADDR + i/256 +"." + (i%256));
+			
 			storageSourceService.insertRow(TABLE_SERVERS, row);
 			
 			if (log.isDebugEnabled())
 				log.info("new server added in table: " + row.toString()); //print the inserted server attributes
-		
 		}
 			
 	}

@@ -65,6 +65,10 @@ public class SDNProjectRemoveResource extends ServerResource {
 			log.error("error in the received json data: " + jsonData, e);
 			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
 		}
+		catch(ClassCastException e) {
+			log.error("error in the received json data: " + jsonData, e);
+			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
+		}
 		
 		/* check if username exists */
 		if(!SDNUtils.userExists(storageSource, user)) {
