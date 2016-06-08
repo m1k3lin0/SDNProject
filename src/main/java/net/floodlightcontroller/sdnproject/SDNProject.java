@@ -5,13 +5,28 @@ package net.floodlightcontroller.sdnproject;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.projectfloodlight.openflow.protocol.OFFlowMod;
+import org.projectfloodlight.openflow.protocol.OFFlowMod.Builder;
+import org.projectfloodlight.openflow.protocol.OFFactories;
+import org.projectfloodlight.openflow.protocol.OFFlowModFlags;
 import org.projectfloodlight.openflow.protocol.OFMessage;
 import org.projectfloodlight.openflow.protocol.OFType;
+import org.projectfloodlight.openflow.protocol.OFVersion;
+import org.projectfloodlight.openflow.types.DatapathId;
+import org.projectfloodlight.openflow.types.EthType;
+import org.projectfloodlight.openflow.types.IPv4Address;
+import org.projectfloodlight.openflow.types.IpProtocol;
+import org.projectfloodlight.openflow.types.MacAddress;
+import org.projectfloodlight.openflow.types.OFBufferId;
+import org.projectfloodlight.openflow.types.OFPort;
+import org.projectfloodlight.openflow.types.TransportPort;
+import org.projectfloodlight.openflow.types.VlanVid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,7 +38,13 @@ import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
+import net.floodlightcontroller.packet.ARP;
+import net.floodlightcontroller.packet.Ethernet;
+import net.floodlightcontroller.packet.IPv4;
+import net.floodlightcontroller.packet.TCP;
+import net.floodlightcontroller.packet.UDP;
 import net.floodlightcontroller.restserver.IRestApiService;
+import net.floodlightcontroller.staticflowentry.IStaticFlowEntryPusherService;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
 
@@ -58,11 +79,35 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected IRestApiService restAPIService; //rest api
 	protected IStorageSourceService storageSourceService; //to store the tables
 	protected IFloodlightProviderService floodlightProviderService; //provider
+	protected IStaticFlowEntryPusherService staticFlowEntryPusherService; //to handle the flow tables
+	
 	
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
 		//called when a row of the table has been inserted or modified	
 		log.info(": row inserted in table {} - " + "ID:" + rowKeys.toString(), tableName);
+		
+	/*	//PROVA ADDFLOW
+		
+		if(tableName == TABLE_USERS){
+			OFFlowMod.Builder fm = null;
+			fm = OFFactories.getFactory(OFVersion.OF_13).buildFlowModify();
+			fm.setIdleTimeout(0);
+			fm.setHardTimeout(0);
+			fm.setBufferId(OFBufferId.NO_BUFFER);
+			fm.setOutPort(OFPort.ANY);
+			fm.setPriority(Integer.MAX_VALUE);
+			fm.setFlags(Collections.singleton(OFFlowModFlags.SEND_FLOW_REM));
+	
+			//DatapathId swDpid = null;
+			String swDpid = "00:00:00:00:00:00:00:01";
+		
+			DatapathId ciccio = DatapathId.of(swDpid);
+			staticFlowEntryPusherService.addFlow("flow1", (OFFlowMod) fm, ciccio);
+
+			log.info("sono riuscito a modificare le cose");
+			//
+		}*/
 			
 	}
 	
@@ -117,6 +162,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		floodlightProviderService = context.getServiceImpl(IFloodlightProviderService.class);
 		restAPIService = context.getServiceImpl(IRestApiService.class);
 		storageSourceService = context.getServiceImpl(IStorageSourceService.class);
+		staticFlowEntryPusherService = context.getServiceImpl(IStaticFlowEntryPusherService.class);
 	}
 
 	@Override
@@ -150,6 +196,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		storageSourceService.setTablePrimaryKeyName(TABLE_SERVERS, COLUMN_S_ID);
 		storageSourceService.addListener(TABLE_SERVERS, this);
 
+		
 		if(log.isDebugEnabled())
 			log.debug("created table " + TABLE_SERVERS + ", with primary key " + COLUMN_S_ID);
 
@@ -161,7 +208,76 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	public net.floodlightcontroller.core.IListener.Command receive(
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
 		// TODO Auto-generated method stub
-		return null;
+		log.info("NON SO CHE FARE CON QUESTO PACCHETTO");		
+		switch (msg.getType()) {
+
+		    case PACKET_IN:
+		        /* Retrieve the deserialized packet in message */
+		        Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
+		 
+		        /* Various getters and setters are exposed in Ethernet */
+		        MacAddress srcMac = eth.getSourceMACAddress();
+		        VlanVid vlanId = VlanVid.ofVlan(eth.getVlanID());
+		 
+		        /* 
+		         * Check the ethertype of the Ethernet frame and retrieve the appropriate payload.
+		         * Note the shallow equality check. EthType caches and reuses instances for valid types.
+		         */
+		        if (eth.getEtherType() == EthType.IPv4) {
+		            /* We got an IPv4 packet; get the payload from Ethernet */
+		           
+		        	log.info("sono di tipo IPV4");
+		        	IPv4 ipv4 = (IPv4) eth.getPayload();
+		             
+		            /* Various getters and setters are exposed in IPv4 */
+		            byte[] ipOptions = ipv4.getOptions();
+		            IPv4Address dstIp = ipv4.getDestinationAddress();
+		             
+		            /* 
+		             * Check the IP protocol version of the IPv4 packet's payload.
+		             * Note the deep equality check. Unlike EthType, IpProtocol does
+		             * not cache valid/common types; thus, all instances are unique.
+		             */
+		            if (ipv4.getProtocol().equals(IpProtocol.TCP)) {
+		                /* We got a TCP packet; get the payload from IPv4 */
+		                TCP tcp = (TCP) ipv4.getPayload();
+		                
+		                /* Various getters and setters are exposed in TCP */
+		                TransportPort srcPort = tcp.getSourcePort();
+		                log.info("*******SOURCE PORT: ", srcPort);
+		                TransportPort dstPort = tcp.getDestinationPort();
+		                short flags = tcp.getFlags();
+		                 
+		                /* Your logic here! */
+		            } else if (ipv4.getProtocol().equals(IpProtocol.UDP)) {
+		                /* We got a UDP packet; get the payload from IPv4 */
+		                UDP udp = (UDP) ipv4.getPayload();
+		  
+		                /* Various getters and setters are exposed in UDP */
+		                TransportPort srcPort = udp.getSourcePort();
+		                log.info("*******SOURCE PORT: ", srcPort);
+		                TransportPort dstPort = udp.getDestinationPort();
+		                 
+		                /* Your logic here! */
+		            }
+		 
+		        } else if (eth.getEtherType() == EthType.ARP) {
+		        	log.info("sono di tipo ARP");
+		            /* We got an ARP packet; get the payload from Ethernet */
+		            ARP arp = (ARP) eth.getPayload();
+		 
+		            /* Various getters and setters are exposed in ARP */
+		            boolean gratuitous = arp.isGratuitous();
+		 
+		        } else {
+		            /* Unhandled ethertype */
+		        }
+		        break;
+		    default:
+		        break;
+		    }
+		    return Command.CONTINUE;
+		
 	}
 	
 	/**
