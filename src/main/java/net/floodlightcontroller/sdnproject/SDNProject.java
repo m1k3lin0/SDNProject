@@ -120,7 +120,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	@Override
 	public String getName() {
 		// TODO Auto-generated method stub
-		return null;
+		return SDNProject.class.getSimpleName();
 	}
 
 	@Override
@@ -132,7 +132,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	@Override
 	public boolean isCallbackOrderingPostreq(OFType type, String name) {
 		// TODO Auto-generated method stub
-		return false;
+		return (type.equals(OFType.PACKET_IN) && (name.equals("forwarding")));
 	}
 
 	@Override
@@ -169,7 +169,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	public void startUp(FloodlightModuleContext context)
 			throws FloodlightModuleException {
 		restAPIService.addRestletRoutable(new SDNProjectRoutable());
-		//floodlightProvider.addOFMessageListener(OFType.PACKET_IN, this);
+		floodlightProviderService.addOFMessageListener(OFType.PACKET_IN, this);
 		
 		/* initialize network parameters */
 		available_servers = tot_servers;
@@ -208,22 +208,23 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	public net.floodlightcontroller.core.IListener.Command receive(
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
 		// TODO Auto-generated method stub
-		log.info("NON SO CHE FARE CON QUESTO PACCHETTO");		
+		// log.info("NON SO CHE FARE CON QUESTO PACCHETTO");		
 		switch (msg.getType()) {
 
 		    case PACKET_IN:
+
 		        /* Retrieve the deserialized packet in message */
 		        Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
-		 
+		    			 
 		        /* Various getters and setters are exposed in Ethernet */
 		        MacAddress srcMac = eth.getSourceMACAddress();
 		        VlanVid vlanId = VlanVid.ofVlan(eth.getVlanID());
-		 
+		        
 		        /* 
 		         * Check the ethertype of the Ethernet frame and retrieve the appropriate payload.
 		         * Note the shallow equality check. EthType caches and reuses instances for valid types.
 		         */
-		        if (eth.getEtherType() == EthType.IPv4) {
+		       if (eth.getEtherType() == EthType.IPv4) {
 		            /* We got an IPv4 packet; get the payload from Ethernet */
 		           
 		        	log.info("sono di tipo IPV4");
@@ -276,7 +277,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		    default:
 		        break;
 		    }
-		    return Command.CONTINUE;
+			return Command.STOP;
 		
 	}
 	
