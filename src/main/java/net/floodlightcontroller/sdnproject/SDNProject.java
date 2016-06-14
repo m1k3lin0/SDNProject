@@ -168,11 +168,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		restAPIService = context.getServiceImpl(IRestApiService.class);
 		storageSourceService = context.getServiceImpl(IStorageSourceService.class);
 		staticFlowEntryPusherService = context.getServiceImpl(IStaticFlowEntryPusherService.class);
-	
-		//da togliere
-    	messageDamper = new OFMessageDamper(10000,
-				EnumSet.of(OFType.FLOW_MOD),
-				250);
+		
 	}
 
 	@Override
@@ -218,7 +214,6 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	public net.floodlightcontroller.core.IListener.Command receive(
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
 		// TODO Auto-generated method stub
-		// log.info("NON SO CHE FARE CON QUESTO PACCHETTO");		
 		switch (msg.getType()) {
 
 		    case PACKET_IN:
@@ -285,37 +280,44 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		        	log.info("Destination: "+ arp.getTargetProtocolAddress());
 		        	log.info("Destination: "+ eth.getDestinationMACAddress());
 		        	
-		        	/*if(arp.getSenderProtocolAddress().toString().equals("10.0.0.1") && arp.getTargetProtocolAddress().toString().equals("10.0.0.2")){
-		        		log.info("SONO ENTRATOOOOOOOOOOOOOOOOOOOOOOO");
-		        		return Command.CONTINUE;
-		        	}
-		        	if(arp.getSenderProtocolAddress().toString().equals("10.0.0.2") && arp.getTargetProtocolAddress().toString().equals("10.0.0.1")){
-		        		return Command.CONTINUE;
-		        	}*/
+		        	
 		        	
 		        	//PROVA AD AGGIUNGERE UNA REGOLA
 		        	OFFactory myFactory = sw.getOFFactory();
 		        	OFFlowMod.Builder fmb = null;
 		        	OFActions actions = myFactory.actions();
 		        	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
-		        	OFActionOutput output = actions.buildOutput().setPort(OFPort.ANY).build();
+		        	OFActionOutput output = actions.buildOutput().setPort(OFPort.ALL).build();
+		        	
 		        	
 		        	
 		        	actionList.add(output);
 		        	Match myMatch = myFactory.buildMatch()
-		        			.setExact(MatchField.ETH_TYPE, EthType.ARP)
-		        			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.1"))
+		        			//.setExact(MatchField.IN_PORT, OFPort.of(1))
+		         			.setExact(MatchField.ETH_TYPE, EthType.ARP)
+		         			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.1"))
 		        			.setExact(MatchField.ARP_TPA, IPv4Address.of("10.0.0.2"))
 		        			.build();
 		        	
-		        	fmb = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowModify(); //modify o add ?
+		        	Match myMatch3 = myFactory.buildMatch()
+		        			.setExact(MatchField.ETH_TYPE,  EthType.IPv4)
+		        			.setExact(MatchField.IPV4_SRC, IPv4Address.of("10.0.0.1"))
+		        			.setExact(MatchField.IPV4_DST, IPv4Address.of("10.0.0.2"))
+		        			.build();
+		        	
+		        	fmb = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowAdd(); //modify o add ?
 		        	
 		        	OFFlowMod flowMod = fmb.setActions(actionList)
     						.setPriority(FlowModUtils.PRIORITY_MAX)
     						.setMatch(myMatch)
     						.build();
+		        	OFFlowMod flowMod3 = fmb.setActions(actionList)
+    						.setPriority(FlowModUtils.PRIORITY_MAX)
+    						.setMatch(myMatch3)
+    						.build();
     	
-		        	staticFlowEntryPusherService.addFlow("regola1", flowMod, DatapathId.of("00:00:00:00:00:00:00:02"));
+		        	//staticFlowEntryPusherService.addFlow("regola1", flowMod, DatapathId.of("00:00:00:00:00:00:00:02"));
+		        	staticFlowEntryPusherService.addFlow("regola1010", flowMod3, DatapathId.of("00:00:00:00:00:00:00:02"));
 		        	//staticFlowEntryPusherService.addFlow("regola2", flowMod, DatapathId.of("00:00:00:00:00:00:00:01"));
 		        	//staticFlowEntryPusherService.addFlow("regola3", flowMod, DatapathId.of("00:00:00:00:00:00:00:03"));
 		        	
@@ -324,15 +326,25 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		        	//seconda regola
 		        	OFFlowMod.Builder fmb1 = null;
 		        	Match myMatch2 = myFactory.buildMatch()
-		        			.setExact(MatchField.ETH_TYPE, EthType.ARP)
-		        			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.2"))
+		        			//.setExact(MatchField.IN_PORT, OFPort.of(2))
+		         			.setExact(MatchField.ETH_TYPE, EthType.ARP)
+		         			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.2"))
 		        			.setExact(MatchField.ARP_TPA, IPv4Address.of("10.0.0.1"))
 		        			.build();
-		        	ArrayList<OFAction> actionList1 = new ArrayList<OFAction>();
-		        	OFActionOutput output1 = actions.buildOutput().setPort(OFPort.ANY).build();
-		        	actionList1.add(output1);
 		        	
-		        	fmb1 = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowModify(); //modify o add ?
+		        	Match myMatch4 = myFactory.buildMatch()
+		        			.setExact(MatchField.ETH_TYPE,  EthType.IPv4)
+		        			.setExact(MatchField.IPV4_SRC, IPv4Address.of("10.0.0.2"))
+		        			.setExact(MatchField.IPV4_DST, IPv4Address.of("10.0.0.1"))
+		        			.build();
+		        	
+		        	ArrayList<OFAction> actionList1 = new ArrayList<OFAction>();
+		        	OFActionOutput output1 = actions.buildOutput().setPort(OFPort.ALL).build();
+		        	actionList1.add(output1);
+
+		        	
+		        	
+		        	fmb1 = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowAdd(); //modify o add ?
 		        	
 		        	
 		        	
@@ -340,37 +352,21 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
     						.setPriority(FlowModUtils.PRIORITY_MAX)
     						.setMatch(myMatch2)
     						.build();
+		
+		        	OFFlowMod flowMod4 = fmb1.setActions(actionList1)
+    						.setPriority(FlowModUtils.PRIORITY_MAX)
+    						.setMatch(myMatch4)
+    						.build();
     	
-		        	staticFlowEntryPusherService.addFlow("regola4", flowMod1, DatapathId.of("00:00:00:00:00:00:00:02"));
+		        	//staticFlowEntryPusherService.addFlow("regola4", flowMod1, DatapathId.of("00:00:00:00:00:00:00:02"));
+		        	staticFlowEntryPusherService.addFlow("regola4040", flowMod4, DatapathId.of("00:00:00:00:00:00:00:02"));
 		        	//staticFlowEntryPusherService.addFlow("regola5", flowMod1, DatapathId.of("00:00:00:00:00:00:00:01"));
 		        	//staticFlowEntryPusherService.addFlow("regola6", flowMod1, DatapathId.of("00:00:00:00:00:00:00:03"));
-		        	
-		        	/*
-		        	
-		        	OFPacketIn pi = (OFPacketIn)msg;
-		    		OFPacketOut.Builder pob = sw.getOFFactory().buildPacketOut();
-		    		pob.setActions(actionList);
-		    		// log.info("actions {}",actions);
-		    		// set buffer-id, in-port and packet-data based on packet-in
-		    		pob.setBufferId(OFBufferId.NO_BUFFER);
-		    		pob.setInPort((pi.getVersion().compareTo(OFVersion.OF_12) < 0 ? pi.getInPort() : pi.getMatch().get(MatchField.IN_PORT)));
-		    		pob.setData(pi.getData());
-		    		
-		    		try {
-		    			if (log.isTraceEnabled()) {
-		    				log.trace("Writing flood PacketOut switch={} packet-in={} packet-out={}",
-		    						new Object[] {sw, pi, pob.build()});
-		    			}
-		    			messageDamper.write(sw, pob.build());
-		    		} catch (IOException e) {
-		    			log.error("Failure writing PacketOut switch={} packet-in={} packet-out={}",
-		    					new Object[] {sw, pi, pob.build()}, e);
-		    		}
-		    
-		            
 		 
 		            /* Various getters and setters are exposed in ARP */
 		            boolean gratuitous = arp.isGratuitous();
+		            
+		            return Command.CONTINUE;
 		 
 		        } else {
 		            /* Unhandled ethertype */
