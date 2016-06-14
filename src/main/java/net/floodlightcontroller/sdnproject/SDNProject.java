@@ -65,6 +65,7 @@ import net.floodlightcontroller.restserver.IRestApiService;
 import net.floodlightcontroller.routing.ForwardingBase;
 import net.floodlightcontroller.routing.IRoutingDecision;
 import net.floodlightcontroller.routing.RoutingDecision;
+import net.floodlightcontroller.sdnproject.web.SDNProjectRoutable;
 import net.floodlightcontroller.staticflowentry.IStaticFlowEntryPusherService;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
@@ -79,7 +80,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	//count the available servers, make private and implement method get and update?
 	//get total number from python script and initialize in init
 	protected static final int tot_servers = 10;
-	protected static int available_servers;
+	public static int available_servers;
 	
 	public static final String FIRST_VIRTUAL_ADDR = "192.168.";
 	public static final String FIRST_PHYSICAL_ADDR = "10.0.";

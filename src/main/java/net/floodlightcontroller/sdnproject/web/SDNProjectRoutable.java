@@ -1,4 +1,4 @@
-package net.floodlightcontroller.sdnproject;
+package net.floodlightcontroller.sdnproject.web;
 
 import org.restlet.Context;
 import org.restlet.Restlet;

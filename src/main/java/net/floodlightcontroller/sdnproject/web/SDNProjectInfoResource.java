@@ -1,5 +1,7 @@
-package net.floodlightcontroller.sdnproject;
+package net.floodlightcontroller.sdnproject.web;
 
+import net.floodlightcontroller.sdnproject.SDNProject;
+import net.floodlightcontroller.sdnproject.SDNUtils;
 import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceService;
 import net.floodlightcontroller.storage.OperatorPredicate;
