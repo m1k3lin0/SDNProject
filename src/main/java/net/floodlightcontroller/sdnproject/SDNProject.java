@@ -3,21 +3,38 @@
  */
 package net.floodlightcontroller.sdnproject;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import org.projectfloodlight.openflow.protocol.OFFactory;
+import org.projectfloodlight.openflow.protocol.OFFlowAdd;
 import org.projectfloodlight.openflow.protocol.OFFlowMod;
 import org.projectfloodlight.openflow.protocol.OFFlowMod.Builder;
 import org.projectfloodlight.openflow.protocol.OFFactories;
 import org.projectfloodlight.openflow.protocol.OFFlowModFlags;
 import org.projectfloodlight.openflow.protocol.OFMessage;
+import org.projectfloodlight.openflow.protocol.OFPacketIn;
+import org.projectfloodlight.openflow.protocol.OFPacketOut;
 import org.projectfloodlight.openflow.protocol.OFType;
 import org.projectfloodlight.openflow.protocol.OFVersion;
+import org.projectfloodlight.openflow.protocol.action.OFAction;
+import org.projectfloodlight.openflow.protocol.action.OFActionEnqueue;
+import org.projectfloodlight.openflow.protocol.action.OFActionOutput;
+import org.projectfloodlight.openflow.protocol.action.OFActionSetDlDst;
+import org.projectfloodlight.openflow.protocol.action.OFActionSetField;
+import org.projectfloodlight.openflow.protocol.action.OFActionSetNwDst;
+import org.projectfloodlight.openflow.protocol.action.OFActions;
+import org.projectfloodlight.openflow.protocol.match.Match;
+import org.projectfloodlight.openflow.protocol.match.MatchField;
+import org.projectfloodlight.openflow.protocol.oxm.OFOxms;
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
@@ -25,6 +42,7 @@ import org.projectfloodlight.openflow.types.IpProtocol;
 import org.projectfloodlight.openflow.types.MacAddress;
 import org.projectfloodlight.openflow.types.OFBufferId;
 import org.projectfloodlight.openflow.types.OFPort;
+import org.projectfloodlight.openflow.types.TableId;
 import org.projectfloodlight.openflow.types.TransportPort;
 import org.projectfloodlight.openflow.types.VlanVid;
 import org.slf4j.Logger;
@@ -44,9 +62,14 @@ import net.floodlightcontroller.packet.IPv4;
 import net.floodlightcontroller.packet.TCP;
 import net.floodlightcontroller.packet.UDP;
 import net.floodlightcontroller.restserver.IRestApiService;
+import net.floodlightcontroller.routing.ForwardingBase;
+import net.floodlightcontroller.routing.IRoutingDecision;
+import net.floodlightcontroller.routing.RoutingDecision;
 import net.floodlightcontroller.staticflowentry.IStaticFlowEntryPusherService;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
+import net.floodlightcontroller.util.FlowModUtils;
+import net.floodlightcontroller.util.OFMessageDamper;
 
 public class SDNProject implements IOFMessageListener, IFloodlightModule, IStorageSourceListener {
 
@@ -81,33 +104,14 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected IFloodlightProviderService floodlightProviderService; //provider
 	protected IStaticFlowEntryPusherService staticFlowEntryPusherService; //to handle the flow tables
 	
+	protected OFMessageDamper messageDamper;
 	
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
 		//called when a row of the table has been inserted or modified	
 		log.info(": row inserted in table {} - " + "ID:" + rowKeys.toString(), tableName);
 		
-	/*	//PROVA ADDFLOW
-		
-		if(tableName == TABLE_USERS){
-			OFFlowMod.Builder fm = null;
-			fm = OFFactories.getFactory(OFVersion.OF_13).buildFlowModify();
-			fm.setIdleTimeout(0);
-			fm.setHardTimeout(0);
-			fm.setBufferId(OFBufferId.NO_BUFFER);
-			fm.setOutPort(OFPort.ANY);
-			fm.setPriority(Integer.MAX_VALUE);
-			fm.setFlags(Collections.singleton(OFFlowModFlags.SEND_FLOW_REM));
 	
-			//DatapathId swDpid = null;
-			String swDpid = "00:00:00:00:00:00:00:01";
-		
-			DatapathId ciccio = DatapathId.of(swDpid);
-			staticFlowEntryPusherService.addFlow("flow1", (OFFlowMod) fm, ciccio);
-
-			log.info("sono riuscito a modificare le cose");
-			//
-		}*/
 			
 	}
 	
@@ -126,13 +130,13 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	@Override
 	public boolean isCallbackOrderingPrereq(OFType type, String name) {
 		// TODO Auto-generated method stub
-		return false;
+		return (type.equals(OFType.PACKET_IN) && (name.equals("devicemanager") || name.equals("topology"))); //after the devicemanager module
 	}
 
 	@Override
 	public boolean isCallbackOrderingPostreq(OFType type, String name) {
 		// TODO Auto-generated method stub
-		return (type.equals(OFType.PACKET_IN) && (name.equals("forwarding")));
+		return (type.equals(OFType.PACKET_IN) && (name.equals("forwarding"))); //before of the forwarding module
 	}
 
 	@Override
@@ -153,6 +157,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		l.add(IFloodlightProviderService.class);
 		l.add(IRestApiService.class);
 		l.add(IStorageSourceService.class);
+		l.add(IStaticFlowEntryPusherService.class);
 		return l;
 	}
 
@@ -163,6 +168,11 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		restAPIService = context.getServiceImpl(IRestApiService.class);
 		storageSourceService = context.getServiceImpl(IStorageSourceService.class);
 		staticFlowEntryPusherService = context.getServiceImpl(IStaticFlowEntryPusherService.class);
+	
+		//da togliere
+    	messageDamper = new OFMessageDamper(10000,
+				EnumSet.of(OFType.FLOW_MOD),
+				250);
 	}
 
 	@Override
@@ -227,9 +237,11 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		       if (eth.getEtherType() == EthType.IPv4) {
 		            /* We got an IPv4 packet; get the payload from Ethernet */
 		           
-		        	log.info("sono di tipo IPV4");
+		        	//log.info("PACCHETTI IPV4");
 		        	IPv4 ipv4 = (IPv4) eth.getPayload();
-		             
+		        	//log.info("Source: "+ ipv4.getSourceAddress());
+		        	//log.info("Destination: "+ ipv4.getDestinationAddress());
+		        	 
 		            /* Various getters and setters are exposed in IPv4 */
 		            byte[] ipOptions = ipv4.getOptions();
 		            IPv4Address dstIp = ipv4.getDestinationAddress();
@@ -245,7 +257,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		                
 		                /* Various getters and setters are exposed in TCP */
 		                TransportPort srcPort = tcp.getSourcePort();
-		                log.info("*******SOURCE PORT: ", srcPort);
+		              //  log.info("*******SOURCE PORT: ", srcPort);
 		                TransportPort dstPort = tcp.getDestinationPort();
 		                short flags = tcp.getFlags();
 		                 
@@ -256,16 +268,106 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		  
 		                /* Various getters and setters are exposed in UDP */
 		                TransportPort srcPort = udp.getSourcePort();
-		                log.info("*******SOURCE PORT: ", srcPort);
+		                //log.info("*******SOURCE PORT: "+ srcPort);
 		                TransportPort dstPort = udp.getDestinationPort();
 		                 
 		                /* Your logic here! */
+		        		return Command.CONTINUE;
 		            }
 		 
 		        } else if (eth.getEtherType() == EthType.ARP) {
-		        	log.info("sono di tipo ARP");
-		            /* We got an ARP packet; get the payload from Ethernet */
+		        	log.info("PACCHETTI ARP");
+		        	/* We got an ARP packet; get the payload from Ethernet */
 		            ARP arp = (ARP) eth.getPayload();
+		            log.info("Lo switch e : "+ sw.getId().toString());
+		            log.info("Source: "+ arp.getSenderProtocolAddress());
+		            log.info("Source: "+ eth.getSourceMACAddress());
+		        	log.info("Destination: "+ arp.getTargetProtocolAddress());
+		        	log.info("Destination: "+ eth.getDestinationMACAddress());
+		        	
+		        	/*if(arp.getSenderProtocolAddress().toString().equals("10.0.0.1") && arp.getTargetProtocolAddress().toString().equals("10.0.0.2")){
+		        		log.info("SONO ENTRATOOOOOOOOOOOOOOOOOOOOOOO");
+		        		return Command.CONTINUE;
+		        	}
+		        	if(arp.getSenderProtocolAddress().toString().equals("10.0.0.2") && arp.getTargetProtocolAddress().toString().equals("10.0.0.1")){
+		        		return Command.CONTINUE;
+		        	}*/
+		        	
+		        	//PROVA AD AGGIUNGERE UNA REGOLA
+		        	OFFactory myFactory = sw.getOFFactory();
+		        	OFFlowMod.Builder fmb = null;
+		        	OFActions actions = myFactory.actions();
+		        	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
+		        	OFActionOutput output = actions.buildOutput().setPort(OFPort.ANY).build();
+		        	
+		        	
+		        	actionList.add(output);
+		        	Match myMatch = myFactory.buildMatch()
+		        			.setExact(MatchField.ETH_TYPE, EthType.ARP)
+		        			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.1"))
+		        			.setExact(MatchField.ARP_TPA, IPv4Address.of("10.0.0.2"))
+		        			.build();
+		        	
+		        	fmb = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowModify(); //modify o add ?
+		        	
+		        	OFFlowMod flowMod = fmb.setActions(actionList)
+    						.setPriority(FlowModUtils.PRIORITY_MAX)
+    						.setMatch(myMatch)
+    						.build();
+    	
+		        	staticFlowEntryPusherService.addFlow("regola1", flowMod, DatapathId.of("00:00:00:00:00:00:00:02"));
+		        	//staticFlowEntryPusherService.addFlow("regola2", flowMod, DatapathId.of("00:00:00:00:00:00:00:01"));
+		        	//staticFlowEntryPusherService.addFlow("regola3", flowMod, DatapathId.of("00:00:00:00:00:00:00:03"));
+		        	
+		        	
+		     
+		        	//seconda regola
+		        	OFFlowMod.Builder fmb1 = null;
+		        	Match myMatch2 = myFactory.buildMatch()
+		        			.setExact(MatchField.ETH_TYPE, EthType.ARP)
+		        			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.2"))
+		        			.setExact(MatchField.ARP_TPA, IPv4Address.of("10.0.0.1"))
+		        			.build();
+		        	ArrayList<OFAction> actionList1 = new ArrayList<OFAction>();
+		        	OFActionOutput output1 = actions.buildOutput().setPort(OFPort.ANY).build();
+		        	actionList1.add(output1);
+		        	
+		        	fmb1 = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowModify(); //modify o add ?
+		        	
+		        	
+		        	
+		        	OFFlowMod flowMod1 = fmb1.setActions(actionList1)
+    						.setPriority(FlowModUtils.PRIORITY_MAX)
+    						.setMatch(myMatch2)
+    						.build();
+    	
+		        	staticFlowEntryPusherService.addFlow("regola4", flowMod1, DatapathId.of("00:00:00:00:00:00:00:02"));
+		        	//staticFlowEntryPusherService.addFlow("regola5", flowMod1, DatapathId.of("00:00:00:00:00:00:00:01"));
+		        	//staticFlowEntryPusherService.addFlow("regola6", flowMod1, DatapathId.of("00:00:00:00:00:00:00:03"));
+		        	
+		        	/*
+		        	
+		        	OFPacketIn pi = (OFPacketIn)msg;
+		    		OFPacketOut.Builder pob = sw.getOFFactory().buildPacketOut();
+		    		pob.setActions(actionList);
+		    		// log.info("actions {}",actions);
+		    		// set buffer-id, in-port and packet-data based on packet-in
+		    		pob.setBufferId(OFBufferId.NO_BUFFER);
+		    		pob.setInPort((pi.getVersion().compareTo(OFVersion.OF_12) < 0 ? pi.getInPort() : pi.getMatch().get(MatchField.IN_PORT)));
+		    		pob.setData(pi.getData());
+		    		
+		    		try {
+		    			if (log.isTraceEnabled()) {
+		    				log.trace("Writing flood PacketOut switch={} packet-in={} packet-out={}",
+		    						new Object[] {sw, pi, pob.build()});
+		    			}
+		    			messageDamper.write(sw, pob.build());
+		    		} catch (IOException e) {
+		    			log.error("Failure writing PacketOut switch={} packet-in={} packet-out={}",
+		    					new Object[] {sw, pi, pob.build()}, e);
+		    		}
+		    
+		            
 		 
 		            /* Various getters and setters are exposed in ARP */
 		            boolean gratuitous = arp.isGratuitous();
@@ -277,6 +379,9 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		    default:
 		        break;
 		    }
+		
+			//RoutingDecision.rtStore.put(cntx, key, IRoutingDecision.CONTEXT_DECISION)
+		
 			return Command.STOP;
 		
 	}
