@@ -22,16 +22,10 @@ public class SDNProjectAddResource extends ServerResource {
 	protected static Logger log = LoggerFactory.getLogger(SDNProjectRequestResource.class);
 	
 	/**
-	 * @param jsonData: json that specifies user and servers
+	 * @param jsonData json that specifies user and servers
 	 * */
 	@Post
 	public Object add(String jsonData){
-		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
-		Map<String,Object> row = new HashMap<String,Object>();
-		
-		if (log.isDebugEnabled()) {
-			log.debug("request received: " + jsonData);
-		}
 		/*
 		 * parse jsonData to get username and server number
 		 * check if username exists
@@ -41,6 +35,13 @@ public class SDNProjectAddResource extends ServerResource {
 		 * define rules
 		 * return OK
 		 * */
+		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
+		Map<String,Object> row = new HashMap<String,Object>();
+		
+		if (log.isDebugEnabled()) {
+			log.debug("request received: " + jsonData);
+		}
+		
 		Map<String, Object> data = new HashMap<String, Object>();
 		String user = null;
 		int servers = 0;
@@ -90,7 +91,7 @@ public class SDNProjectAddResource extends ServerResource {
 		
 		log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
 
-		/* TODO define new rules */
+		/* new rules defined in SDNProject.rowsModified() */
 
 		SDNProject.available_servers -= servers;
 

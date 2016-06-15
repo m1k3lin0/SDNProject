@@ -16,18 +16,20 @@ import net.floodlightcontroller.storage.IStorageSourceService;
 
 /**
  * responds to URI /remove
- * remove a number of servers from the pool
+ * removes a number of servers from the pool
  */
 public class SDNProjectRemoveResource extends ServerResource {
 	protected static Logger log = LoggerFactory.getLogger(SDNProjectRequestResource.class);
 	
+	/**
+	 * @param jsonData json that specifies user and servers to remove
+	 **/
 	@Post
-	public Object remove(String jsonData){
-		
-		/* TODO
+	public Object remove(String jsonData){	
+		/*
 		 * parse jsonData to get username and number of servers
 		 * check if user exists
-		 * if number is "all" or > total server -> remove all and delete user from tables
+		 * if number > total server -> remove all and delete user from tables
 		 * else update tables, update available_servers variable
 		 * delete rules
 		 * return OK
@@ -98,10 +100,10 @@ public class SDNProjectRemoveResource extends ServerResource {
 		
 		log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
 
-		/* TODO fetch free server addresses & update data in servers table */
+		/* fetch free server addresses & update data in servers table */
 		SDNUtils.removeServers(storageSource, servers, user);
 		
-		/* TODO remove rules */
+		/* rules updated in SDNProject.rowsModified() */
 
         setStatus(Status.SUCCESS_OK);
 		

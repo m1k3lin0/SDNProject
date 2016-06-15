@@ -8,8 +8,6 @@ import java.util.Map;
 import net.floodlightcontroller.sdnproject.SDNProject;
 import net.floodlightcontroller.sdnproject.SDNUtils;
 import net.floodlightcontroller.storage.IStorageSourceService;
-import net.floodlightcontroller.storage.OperatorPredicate;
-import net.floodlightcontroller.storage.OperatorPredicate.Operator;
 
 import org.restlet.data.Status;
 import org.restlet.resource.Post;
@@ -25,17 +23,11 @@ public class SDNProjectRequestResource extends ServerResource{
 	protected static Logger log = LoggerFactory.getLogger(SDNProjectRequestResource.class);
 	
 	/**
-	 * @param jsonData: json that specifies user and servers
+	 * @param jsonData json that specifies user and servers
 	 * */
 	@Post
 	public Object request(String jsonData){
-		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
-		Map<String,Object> row = new HashMap<String,Object>();
-		
-		if (log.isDebugEnabled()) {
-			log.debug("request received: " + jsonData);
-		}
-		/* TODO
+		/*
 		 * parse jsonData to get the username and the number of servers requested
 		 * check if username already exists in the users table
 		 * check if enough servers are available (variable)
@@ -45,6 +37,13 @@ public class SDNProjectRequestResource extends ServerResource{
 		 * define rules
 		 * return OK
 		 * */
+		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
+		Map<String,Object> row = new HashMap<String,Object>();
+		
+		if (log.isDebugEnabled()) {
+			log.debug("request received: " + jsonData);
+		}
+		
 		Map<String, Object> data = new HashMap<String, Object>();
 		String user = null;
 		int servers = 0;
@@ -94,7 +93,7 @@ public class SDNProjectRequestResource extends ServerResource{
 		// add new row
 		storageSource.insertRowAsync(SDNProject.TABLE_USERS, row);
 		
-		/* TODO define new rules */
+		/* new rules defined in SDNProject.rowsModified() */
 
 		SDNProject.available_servers -= servers;
 		

@@ -3,46 +3,29 @@
  */
 package net.floodlightcontroller.sdnproject;
 
-import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.projectfloodlight.openflow.protocol.OFFactory;
-import org.projectfloodlight.openflow.protocol.OFFlowAdd;
 import org.projectfloodlight.openflow.protocol.OFFlowMod;
-import org.projectfloodlight.openflow.protocol.OFFlowMod.Builder;
 import org.projectfloodlight.openflow.protocol.OFFactories;
-import org.projectfloodlight.openflow.protocol.OFFlowModFlags;
 import org.projectfloodlight.openflow.protocol.OFMessage;
-import org.projectfloodlight.openflow.protocol.OFPacketIn;
-import org.projectfloodlight.openflow.protocol.OFPacketOut;
 import org.projectfloodlight.openflow.protocol.OFType;
-import org.projectfloodlight.openflow.protocol.OFVersion;
 import org.projectfloodlight.openflow.protocol.action.OFAction;
-import org.projectfloodlight.openflow.protocol.action.OFActionEnqueue;
 import org.projectfloodlight.openflow.protocol.action.OFActionOutput;
-import org.projectfloodlight.openflow.protocol.action.OFActionSetDlDst;
-import org.projectfloodlight.openflow.protocol.action.OFActionSetField;
-import org.projectfloodlight.openflow.protocol.action.OFActionSetNwDst;
 import org.projectfloodlight.openflow.protocol.action.OFActions;
 import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
-import org.projectfloodlight.openflow.protocol.oxm.OFOxms;
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
 import org.projectfloodlight.openflow.types.IpProtocol;
 import org.projectfloodlight.openflow.types.MacAddress;
-import org.projectfloodlight.openflow.types.OFBufferId;
 import org.projectfloodlight.openflow.types.OFPort;
-import org.projectfloodlight.openflow.types.TableId;
 import org.projectfloodlight.openflow.types.TransportPort;
 import org.projectfloodlight.openflow.types.VlanVid;
 import org.slf4j.Logger;
@@ -62,9 +45,6 @@ import net.floodlightcontroller.packet.IPv4;
 import net.floodlightcontroller.packet.TCP;
 import net.floodlightcontroller.packet.UDP;
 import net.floodlightcontroller.restserver.IRestApiService;
-import net.floodlightcontroller.routing.ForwardingBase;
-import net.floodlightcontroller.routing.IRoutingDecision;
-import net.floodlightcontroller.routing.RoutingDecision;
 import net.floodlightcontroller.sdnproject.web.SDNProjectRoutable;
 import net.floodlightcontroller.staticflowentry.IStaticFlowEntryPusherService;
 import net.floodlightcontroller.storage.IStorageSourceListener;
@@ -77,8 +57,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
 
 	/* network parameters */
-	//count the available servers, make private and implement method get and update?
-	//get total number from python script and initialize in init
+	// count the available servers, make private and implement method get and update?
+	// TODO get total number from python script and initialize in init
 	protected static final int tot_servers = 10;
 	public static int available_servers;
 	
@@ -88,37 +68,56 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	/* module constant */
 	
 	// table of servers
-	public static final String TABLE_SERVERS 		= "SDNProject_servers";
-	public static final String COLUMN_S_ID			= "ID";
-	public static final String COLUMN_S_PHYSICAL 	= "physical_address";
-	public static final String COLUMN_S_VIRTUAL 	= "virtual_address";
-	public static final String COLUMN_S_USER 		= "user";
+	public static final String TABLE_SERVERS 	= "SDNProject_servers";
+	public static final String COLUMN_S_ID		= "ID";
+	public static final String COLUMN_S_PHYSICAL= "physical_address";
+	public static final String COLUMN_S_VIRTUAL = "virtual_address";
+	public static final String COLUMN_S_USER 	= "user";
 	
 	// table of the users
 	public static final String TABLE_USERS		= "SDNProject_users";
 	public static final String COLUMN_U_NAME 	= "user";
 	public static final String COLUMN_U_SERVERS = "servers";
 	
+	// table of the rules
+	public static final String TABLE_RULES		= "SDNProject_rules";
+	public static final String COLUMN_R_NAME	= "rule_name";
+	public static final String COLUMN_R_SRC		= "source_address";
+	public static final String COLUMN_R_DST		= "destination_address";
 	
-	protected IRestApiService restAPIService; //rest api
-	protected IStorageSourceService storageSourceService; //to store the tables
-	protected IFloodlightProviderService floodlightProviderService; //provider
-	protected IStaticFlowEntryPusherService staticFlowEntryPusherService; //to handle the flow tables
-	
-	protected OFMessageDamper messageDamper;
+	/* services */
+	protected IRestApiService restAPIService;
+	protected IStorageSourceService storageSourceService;
+	protected IFloodlightProviderService floodlightProviderService;
+	protected IStaticFlowEntryPusherService staticFlowEntryPusherService;
 	
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
-		//called when a row of the table has been inserted or modified	
+		// called when a row of the table has been inserted or modified	
 		log.info(": row inserted in table {} - " + "ID:" + rowKeys.toString(), tableName);
 		
-	
+		//if tableName == TABLE_SERVERS
+		
+		//update rules
+		
+		/*if rows modified has user == null (delete rules)
+		 * delete all the rules that involve the physical ip of the modified rows
+		 * to know which rules to delete, query the table of the rules, with ip as src or dst
+		 * call deleteFlow
+		 * 
+		 *else rows have been added
+		 *add rules for each IP belonging to the user, specified in the row modified
+		 *(all the IP, not only the new ones)
+		 *update table of rules
+		 *TODO how to assign names such that already existent are not doubled?
+		 */
+		
 			
 	}
 	
 	@Override
 	public void rowsDeleted(String tableName, Set<Object> rowKeys){
-		//called when a row of the table has been updated
+		// called when a row of the table has been deleted
 		log.info(": row deleted from table {} - " + "ID:" + rowKeys.toString(), tableName);
 	}
 	
@@ -130,14 +129,14 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
 	@Override
 	public boolean isCallbackOrderingPrereq(OFType type, String name) {
-		// TODO Auto-generated method stub
-		return (type.equals(OFType.PACKET_IN) && (name.equals("devicemanager") || name.equals("topology"))); //after the devicemanager module
+		// modules that need to be placed before SDNProject
+		return (type.equals(OFType.PACKET_IN) && (name.equals("devicemanager") || name.equals("topology")));
 	}
 
 	@Override
-	public boolean isCallbackOrderingPostreq(OFType type, String name) {
-		// TODO Auto-generated method stub
-		return (type.equals(OFType.PACKET_IN) && (name.equals("forwarding"))); //before of the forwarding module
+	public boolean isCallbackOrderingPostreq(OFType type, String name) { 
+		// modules that need to be placed after SDNProject
+		return (type.equals(OFType.PACKET_IN) && (name.equals("forwarding")));
 	}
 
 	@Override
@@ -194,6 +193,15 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		if(log.isDebugEnabled())
 			log.debug("created table " + TABLE_USERS + ", with primary key " + COLUMN_U_NAME);
 
+		/* CREATE RULES TABLE */
+		storageSourceService.createTable(TABLE_RULES, null);
+		// column rule_name is primary key
+		storageSourceService.setTablePrimaryKeyName(TABLE_RULES, COLUMN_R_NAME);
+		//storageSourceService.addListener(TABLE_RULES, this);
+
+		if(log.isDebugEnabled())
+			log.debug("created table " + TABLE_RULES + ", with primary key " + COLUMN_R_NAME);
+
 		/* CREATE SERVERS TABLE */
 		// column user is to be indexed
 		Set<String> indexedColumns = new HashSet<String>();
@@ -202,7 +210,6 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		// column id is primary key
 		storageSourceService.setTablePrimaryKeyName(TABLE_SERVERS, COLUMN_S_ID);
 		storageSourceService.addListener(TABLE_SERVERS, this);
-
 		
 		if(log.isDebugEnabled())
 			log.debug("created table " + TABLE_SERVERS + ", with primary key " + COLUMN_S_ID);
@@ -214,7 +221,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	@Override
 	public net.floodlightcontroller.core.IListener.Command receive(
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
-		// TODO Auto-generated method stub
+		// TODO move rules to rowsModified, 
+		// this should only return Command.STOP in order to drop all packets received by the controller
 		switch (msg.getType()) {
 
 		    case PACKET_IN:
@@ -387,8 +395,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	 * initializes the servers table with ID and Physical IP address
 	 * ID is an incremental number, starting from 1
 	 * IP address is assigned in an incremental manner starting from 10.0.0.1
-	 * all other fields are filled with null value
-	 * @param servers : total number of servers
+	 * all other fields are filled with null values
+	 * @param servers total number of servers
 	 * */
 	public void initServersTable(int servers){
 		Integer ID = 1;
@@ -409,7 +417,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			ID++;
 			
 			if (log.isDebugEnabled())
-				log.info("new server added in table: " + row.toString()); //print the inserted server attributes
+				log.info("new server added to table: " + row.toString()); //print the inserted server attributes
 		}
 			
 	}
