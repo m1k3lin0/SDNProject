@@ -10,12 +10,10 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Set;
 
 import org.projectfloodlight.openflow.protocol.OFFactory;
 import org.projectfloodlight.openflow.protocol.OFFlowMod;
-import org.projectfloodlight.openflow.protocol.OFFactories;
 import org.projectfloodlight.openflow.protocol.OFMessage;
 import org.projectfloodlight.openflow.protocol.OFType;
 import org.projectfloodlight.openflow.protocol.action.OFAction;
@@ -115,13 +113,20 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
 	//****************************************************
 	
-	private List<DatapathId> getSwitches(String sourceAddress, String destAddress){
+	/**
+	 * finds all the switches on the path that connect two devices identified by
+	 * the provided IP addresses
+	 * @param sourceAddress is the IP address of the source host
+	 * @param destAddress is the IP address of the destination host
+	 * @return a list of all the switches on the path as List of DatapathId
+	 * */
+	private List<DatapathId> getSwitches(String sourceAddress, String destAddress) {
 		
 		List<DatapathId> switches = new ArrayList<DatapathId>();
 		// TODO find a way to take switch pid to which the addresses are connected
 		DatapathId srcSwitch = DatapathId.of("00:00:00:00:00:00:00:02");
 		DatapathId dstSwitch = DatapathId.of("00:00:00:00:00:00:00:03");
-		//
+		//----------------
 		
 		//if they are equal, there's no need to compute the route because the switch is just one
 		if(srcSwitch.equals(dstSwitch)){
@@ -129,20 +134,20 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			return switches;
 		}
 		
-		//take the switches traversed by the path between source and destination
+		// take the switches traversed by the path between source and destination
 		Route route = null;
 		
-		try{
-			route = routingService.getRoute(srcSwitch,dstSwitch , U64.of(0));
+		try {
+			route = routingService.getRoute(srcSwitch, dstSwitch, U64.of(0));
 		}
 		catch(Exception e) {
 			log.info("eccezione in getSwitches: {}", e);
 		}
 
-		//non inserire i duplicati!!
+		// avoid duplicates
 	    List<NodePortTuple> switchList = route.getPath();
 	    for (NodePortTuple npt: switchList){
-	    	if(!switches.contains(npt.getNodeId())) //if the pid is not in the list, add
+	    	if(!switches.contains(npt.getNodeId())) // the pid is not already in the list
 	    		switches.add(npt.getNodeId());
 	    }
 		return switches;
@@ -409,7 +414,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	@Override
 	public net.floodlightcontroller.core.IListener.Command receive(
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
-		// TODO move rules to rowsModified, 
+ 
 		// this should only return Command.STOP in order to drop all packets received by the controller
         
 		switch (msg.getType()) {
@@ -417,13 +422,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		    case PACKET_IN:
 				return Command.STOP;
 		    default:
-		        break;
+				return Command.CONTINUE;
 		    }
-		
-			//RoutingDecision.rtStore.put(cntx, key, IRoutingDecision.CONTEXT_DECISION)
-		
-			return Command.CONTINUE;
-		
 	}
 	
 	/**
