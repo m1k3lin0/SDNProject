@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -23,10 +24,12 @@ import org.projectfloodlight.openflow.protocol.match.MatchField;
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
+import org.projectfloodlight.openflow.types.IPv6Address;
 import org.projectfloodlight.openflow.types.IpProtocol;
 import org.projectfloodlight.openflow.types.MacAddress;
 import org.projectfloodlight.openflow.types.OFPort;
 import org.projectfloodlight.openflow.types.TransportPort;
+import org.projectfloodlight.openflow.types.U64;
 import org.projectfloodlight.openflow.types.VlanVid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,16 +42,24 @@ import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
+import net.floodlightcontroller.devicemanager.IDevice;
+import net.floodlightcontroller.devicemanager.IDeviceService;
+import net.floodlightcontroller.devicemanager.SwitchPort;
 import net.floodlightcontroller.packet.ARP;
 import net.floodlightcontroller.packet.Ethernet;
 import net.floodlightcontroller.packet.IPv4;
 import net.floodlightcontroller.packet.TCP;
 import net.floodlightcontroller.packet.UDP;
 import net.floodlightcontroller.restserver.IRestApiService;
+import net.floodlightcontroller.routing.IRoutingService;
+import net.floodlightcontroller.routing.Link;
+import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.sdnproject.web.SDNProjectRoutable;
 import net.floodlightcontroller.staticflowentry.IStaticFlowEntryPusherService;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
+import net.floodlightcontroller.topology.ITopologyService;
+import net.floodlightcontroller.topology.NodePortTuple;
 import net.floodlightcontroller.util.FlowModUtils;
 import net.floodlightcontroller.util.OFMessageDamper;
 
@@ -90,6 +101,43 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected IStorageSourceService storageSourceService;
 	protected IFloodlightProviderService floodlightProviderService;
 	protected IStaticFlowEntryPusherService staticFlowEntryPusherService;
+	
+	protected IRoutingService routingService;
+	
+	
+	private List<DatapathId> getSwitches(String sourceAddress, String destAddress){
+		
+		List<DatapathId> switches = new ArrayList<DatapathId>();
+		// TODO find a way to take switch pid to which the addresses are connected
+		DatapathId srcSwitch = DatapathId.of("00:00:00:00:00:00:00:04");
+		DatapathId dstSwitch = DatapathId.of("00:00:00:00:00:00:00:0f");
+		//
+		
+		
+		//if they are equal, there's no need to compute the route because the switch is just one
+		if(srcSwitch.equals(dstSwitch)){
+			switches.add(srcSwitch);
+			return switches;
+		}
+		
+		//take the switches traversed by the path between source and destination
+		Route route = null;
+		
+		try{
+			route = routingService.getRoute(srcSwitch,dstSwitch , U64.of(0));
+		}
+		catch(Exception e) {
+			log.info("eccezione in getSwitches: {}", e);
+		}
+
+		//non inserire i duplicati!!
+	    List<NodePortTuple> switchList = route.getPath();
+	    for (NodePortTuple npt: switchList){
+	    	if(!switches.contains(npt.getNodeId())) //if the pid is not in the list, add
+	    		switches.add(npt.getNodeId());
+	    }
+		return switches;
+	}
 	
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
@@ -158,6 +206,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		l.add(IRestApiService.class);
 		l.add(IStorageSourceService.class);
 		l.add(IStaticFlowEntryPusherService.class);
+		
+		l.add(IRoutingService.class);
 		return l;
 	}
 
@@ -168,6 +218,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		restAPIService = context.getServiceImpl(IRestApiService.class);
 		storageSourceService = context.getServiceImpl(IStorageSourceService.class);
 		staticFlowEntryPusherService = context.getServiceImpl(IStaticFlowEntryPusherService.class);
+		
+		routingService = context.getServiceImpl(IRoutingService.class);
 		
 	}
 
@@ -223,10 +275,52 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
 		// TODO move rules to rowsModified, 
 		// this should only return Command.STOP in order to drop all packets received by the controller
+        
 		switch (msg.getType()) {
 
 		    case PACKET_IN:
+		    	
+		    	//PROVA DELLA FUNZIONE
+		    	List<DatapathId> lista = new ArrayList<DatapathId>();
+		    	//log.info("PID DELLO SWITCH"+sw.getId().toString());
+		    	try {
+		    		lista = getSwitches("ciao","ciao1");
+		    	
+		    		log.info("RUTTO LIBERO");
+		    	
+		    	
+		    		for (DatapathId npt: lista){
+		    			log.info("OOOOOOOOOOOOOOOOOOOOOOOOOOOOO: "+npt.toString());
+		    		}
+		    	}
+		    	catch (NullPointerException e){
+		    		log.info("eccezione in receive: " + e);
+		    	}
+		    	//IDevice dispositivo = deviceService.findDevice(MacAddress.NONE, VlanVid.ZERO, IPv4Address.NONE, IPv6Address.NONE, DatapathId.of("00:00:00:00:00:00:00:01"), OFPort.ZERO);
+		    	
+		    	//log.info("IL DEVICE : " + dispositivo.getDeviceKey().toString());
+		    	//SwitchPort[] porteswitch =
+		    	//log.info("RITORNO GETATTACHMENTPOINTS: "+dispositivo.getAttachmentPoints());
+		    	
+		    	//for(int i = 0; i<porteswitch.length; i++){
+		    	//	log.info("OOOOOOOOOOOOOOOOO:   "+porteswitch[i].getSwitchDPID().toString());
+		    	//}
+		    	
+		    	/*for (SwitchPort dstDap : dispositivo.getAttachmentPoints()) {
+					
+		    		log.info("SWITCHOOOOOOOOOOOOOOOOOOOOOO: "+dstDap.getSwitchDPID().toString());
+				}*/
+		    	
+		    	/* Route rute = routingService.getRoute(DatapathId.of("00:00:00:00:00:00:00:02"),DatapathId.of("00:00:00:00:00:00:00:02") , U64.of(0));
 
+		    	log.info("RUTTO LIBERO");
+		    	
+		    	List<NodePortTuple> listaswitch = rute.getPath();
+		    	
+		    	for (NodePortTuple npt: listaswitch){
+		    		log.info("OOOOOOOOOOOOOOOOOOOOOOOOOOOOO: "+npt.getNodeId().toString());
+		    	}
+		    	*/
 		        /* Retrieve the deserialized packet in message */
 		        Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
 		    			 
@@ -283,16 +377,18 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		        	log.info("PACCHETTI ARP");
 		        	/* We got an ARP packet; get the payload from Ethernet */
 		            ARP arp = (ARP) eth.getPayload();
-		            log.info("Lo switch e : "+ sw.getId().toString());
+		      /*    log.info("Lo switch e : "+ sw.getId().toString());
 		            log.info("Source: "+ arp.getSenderProtocolAddress());
 		            log.info("Source: "+ eth.getSourceMACAddress());
 		        	log.info("Destination: "+ arp.getTargetProtocolAddress());
 		        	log.info("Destination: "+ eth.getDestinationMACAddress());
-		        	
+		        */
+		            
+
 		        	
 		        	
 		        	//PROVA AD AGGIUNGERE UNA REGOLA
-		        	OFFactory myFactory = sw.getOFFactory();
+		      /*  	OFFactory myFactory = sw.getOFFactory();
 		        	OFFlowMod.Builder fmb = null;
 		        	OFActions actions = myFactory.actions();
 		        	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
@@ -371,11 +467,13 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		        	staticFlowEntryPusherService.addFlow("regola4040", flowMod4, DatapathId.of("00:00:00:00:00:00:00:02"));
 		        	//staticFlowEntryPusherService.addFlow("regola5", flowMod1, DatapathId.of("00:00:00:00:00:00:00:01"));
 		        	//staticFlowEntryPusherService.addFlow("regola6", flowMod1, DatapathId.of("00:00:00:00:00:00:00:03"));
+		*/ 
+		 			
 		 
 		            /* Various getters and setters are exposed in ARP */
 		            boolean gratuitous = arp.isGratuitous();
 		            
-		            return Command.CONTINUE;
+		            //return Command.CONTINUE;
 		 
 		        } else {
 		            /* Unhandled ethertype */
@@ -387,7 +485,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		
 			//RoutingDecision.rtStore.put(cntx, key, IRoutingDecision.CONTEXT_DECISION)
 		
-			return Command.STOP;
+			return Command.CONTINUE;
 		
 	}
 	
