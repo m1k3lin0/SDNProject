@@ -7,8 +7,10 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 
 import org.projectfloodlight.openflow.protocol.OFFactory;
@@ -21,6 +23,7 @@ import org.projectfloodlight.openflow.protocol.action.OFActionOutput;
 import org.projectfloodlight.openflow.protocol.action.OFActions;
 import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
+import org.projectfloodlight.openflow.protocol.ver13.OFFactoryVer13;
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
@@ -56,10 +59,16 @@ import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.sdnproject.web.SDNProjectRoutable;
 import net.floodlightcontroller.staticflowentry.IStaticFlowEntryPusherService;
+import net.floodlightcontroller.statistics.web.SwitchPortBandwidthSerializer;
+import net.floodlightcontroller.storage.CompoundPredicate;
+import net.floodlightcontroller.storage.IPredicate;
+import net.floodlightcontroller.storage.IResultSet;
 import net.floodlightcontroller.storage.IStorageSourceListener;
 import net.floodlightcontroller.storage.IStorageSourceService;
 import net.floodlightcontroller.topology.ITopologyService;
 import net.floodlightcontroller.topology.NodePortTuple;
+import net.floodlightcontroller.storage.OperatorPredicate;
+import net.floodlightcontroller.storage.OperatorPredicate.Operator;
 import net.floodlightcontroller.util.FlowModUtils;
 import net.floodlightcontroller.util.OFMessageDamper;
 
@@ -101,18 +110,18 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected IStorageSourceService storageSourceService;
 	protected IFloodlightProviderService floodlightProviderService;
 	protected IStaticFlowEntryPusherService staticFlowEntryPusherService;
-	
 	protected IRoutingService routingService;
 	
+
+	//****************************************************
 	
 	private List<DatapathId> getSwitches(String sourceAddress, String destAddress){
 		
 		List<DatapathId> switches = new ArrayList<DatapathId>();
 		// TODO find a way to take switch pid to which the addresses are connected
-		DatapathId srcSwitch = DatapathId.of("00:00:00:00:00:00:00:04");
-		DatapathId dstSwitch = DatapathId.of("00:00:00:00:00:00:00:0f");
+		DatapathId srcSwitch = DatapathId.of("00:00:00:00:00:00:00:02");
+		DatapathId dstSwitch = DatapathId.of("00:00:00:00:00:00:00:03");
 		//
-		
 		
 		//if they are equal, there's no need to compute the route because the switch is just one
 		if(srcSwitch.equals(dstSwitch)){
@@ -138,35 +147,162 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	    }
 		return switches;
 	}
+
+	private void deleteRules(String phy_address) {
+		IPredicate[] predicates = {	new OperatorPredicate(COLUMN_R_SRC, Operator.EQ, phy_address),
+									new OperatorPredicate(COLUMN_R_DST, Operator.EQ, phy_address)};
+		CompoundPredicate predicate = new CompoundPredicate(CompoundPredicate.Operator.OR, false, predicates);
+		IResultSet resultSet = storageSourceService.executeQuery(TABLE_RULES, new String[] {COLUMN_R_NAME}, predicate, null);
+		Map<String, Object> row;
+
+		// delete all flows with phy_address as source or destination address 
+		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
+			row = it.next().getRow();
+			String rule = (String)row.get(COLUMN_R_NAME);
+			staticFlowEntryPusherService.deleteFlow(rule);
+			log.info("deleted rule {}", rule);
+		}
+	}
+	
+	private void updateRules(String user, String newAddress) {
+		// fetch all the addresses belonging to the user
+		List<String> poolAddresses = SDNUtils.getPoolAddresses(storageSourceService, user);
+		
+		// for each old address, add a rule to connect to the new one
+		for(String srcAddress : poolAddresses) {
+			// skip the address itself
+			if(srcAddress.equals(newAddress))
+				continue;
+			// get switches' PIDs that connect the two hosts
+			List<DatapathId> switchesList = getSwitches(srcAddress, newAddress);
+			//define new rule for each switch
+			for(DatapathId sw : switchesList) {
+				//each rule name must be unique, call them as srcAddress-dstAddress-switchPID
+				String ruleName = srcAddress + "-" + newAddress + "-" + sw.toString();
+				SDNUtils.addToRulesTable(storageSourceService, ruleName, srcAddress, newAddress);
+				log.info("added rule {}", ruleName);
+
+				// add new rule to the switch
+				addNewFlowMod(ruleName, srcAddress, newAddress, sw, true);
+			}
+		}
+		
+		// add rules from the new one to all the old addresses
+		for(String dstAddress : poolAddresses) {
+			// skip the address itself
+			if(dstAddress.equals(newAddress))
+				continue;
+			// get switches' PIDs that connect the two hosts
+			List<DatapathId> switchesList = getSwitches(newAddress, dstAddress);
+			//define new rule for each switch
+			for(DatapathId sw : switchesList) {
+				//each rule name must be unique, called them as srcAddress-dstAddress-switchPID
+				String ruleName = newAddress + "-" + dstAddress + "-" + sw.toString();
+				SDNUtils.addToRulesTable(storageSourceService, ruleName, newAddress, dstAddress);
+				log.info("added rule {}", ruleName);
+
+				// add new rule to the switch
+				addNewFlowMod(ruleName, newAddress, dstAddress, sw, true);
+			}
+		}
+	}
+	
+	/**
+	 * adds new flowMod (rule) to the specified switch
+	 * the rules added affect both ARP and IPv4 packets
+	 * @param ruleName is the name of the rule to add
+	 * @param srcAddress is the source address
+	 * @param dstAddress is the destination address
+	 * @param pid is the pid of the switch to add the rule on
+	 * @param ARP set to true if you want to add the rule also for ARP packets
+	 * */
+	private void addNewFlowMod(String ruleName, String srcAddress, String dstAddress, DatapathId pid, boolean ARP) {
+		// we assumed to use OF13
+		// TODO make more dynamic by getting the version from the switch
+		// (switchService.getSwitch(pid)).getOFFactory();
+		OFFactory myFactory = OFFactoryVer13.INSTANCE;
+    	OFFlowMod.Builder fmb = null;
+    	OFActions actions = myFactory.actions();
+    	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
+    	OFActionOutput output = actions.buildOutput()
+    			.setPort(OFPort.ALL)
+    			// TODO specify correct port
+    			.build();
+    	
+    	actionList.add(output);
+    	
+    	Match myMatchARP = myFactory.buildMatch()
+     			.setExact(MatchField.ETH_TYPE, EthType.ARP)
+     			.setExact(MatchField.ARP_SPA, IPv4Address.of(srcAddress))
+    			.setExact(MatchField.ARP_TPA, IPv4Address.of(dstAddress))
+    			.build();
+    	
+    	Match myMatchIPv4 = myFactory.buildMatch()
+    			.setExact(MatchField.ETH_TYPE,  EthType.IPv4)
+    			.setExact(MatchField.IPV4_SRC, IPv4Address.of(srcAddress))
+    			.setExact(MatchField.IPV4_DST, IPv4Address.of(dstAddress))
+    			.build();
+    	
+    	fmb = myFactory.buildFlowAdd();
+    	
+    	OFFlowMod flowModARP = fmb.setActions(actionList)
+				.setPriority(FlowModUtils.PRIORITY_MAX)
+				.setMatch(myMatchARP)
+				.build();
+    	
+    	OFFlowMod flowModIPv4 = fmb.setActions(actionList)
+				.setPriority(FlowModUtils.PRIORITY_MAX)
+				.setMatch(myMatchIPv4)
+				.build();
+
+    	staticFlowEntryPusherService.addFlow(ruleName, flowModIPv4, pid);
+    	
+    	if(ARP) {
+    		ruleName += "-ARP";
+			SDNUtils.addToRulesTable(storageSourceService, ruleName, srcAddress, dstAddress);
+			log.info("added rule {}", ruleName);
+    		staticFlowEntryPusherService.addFlow(ruleName, flowModARP, pid);
+
+    	}
+	}
+	//****************************************************
 	
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
 		// called when a row of the table has been inserted or modified	
-		log.info(": row inserted in table {} - " + "ID:" + rowKeys.toString(), tableName);
-		
-		//if tableName == TABLE_SERVERS
-		
-		//update rules
-		
-		/*if rows modified has user == null (delete rules)
-		 * delete all the rules that involve the physical ip of the modified rows
-		 * to know which rules to delete, query the table of the rules, with ip as src or dst
-		 * call deleteFlow
-		 * 
-		 *else rows have been added
-		 *add rules for each IP belonging to the user, specified in the row modified
-		 *(all the IP, not only the new ones)
-		 *update table of rules
-		 *TODO how to assign names such that already existent are not doubled?
-		 */
-		
+		log.info("row inserted in table {} - " + "ID:" + rowKeys.toString(), tableName);
+
+		// update rules if the modified table is TABLE_SERVERS
+		if(tableName == TABLE_SERVERS) {
+			
+			String user = null;
+			String address = null;
+			
+			for (Object key : rowKeys) {
+				IResultSet resultSet = storageSourceService.getRow(tableName, key);
+				Iterator<IResultSet> it = resultSet.iterator();
+				while (it.hasNext()) {
+					Map<String, Object> row = it.next().getRow();
+					user = (String) row.get(COLUMN_S_USER);
+					address = (String) row.get(COLUMN_S_PHYSICAL);
+					// row has been deleted
+					if(user == null) {
+						deleteRules(address);
+					}
+					// row has been added
+					else {
+						updateRules(user, address);
+					}
+				}
+			}
+		}
 			
 	}
 	
 	@Override
 	public void rowsDeleted(String tableName, Set<Object> rowKeys){
 		// called when a row of the table has been deleted
-		log.info(": row deleted from table {} - " + "ID:" + rowKeys.toString(), tableName);
+		log.info("row deleted from table {} - " + "ID:" + rowKeys.toString(), tableName);
 	}
 	
 	@Override
@@ -279,206 +415,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		switch (msg.getType()) {
 
 		    case PACKET_IN:
-		    	
-		    	//PROVA DELLA FUNZIONE
-		    	List<DatapathId> lista = new ArrayList<DatapathId>();
-		    	//log.info("PID DELLO SWITCH"+sw.getId().toString());
-		    	try {
-		    		lista = getSwitches("ciao","ciao1");
-		    	
-		    		log.info("RUTTO LIBERO");
-		    	
-		    	
-		    		for (DatapathId npt: lista){
-		    			log.info("OOOOOOOOOOOOOOOOOOOOOOOOOOOOO: "+npt.toString());
-		    		}
-		    	}
-		    	catch (NullPointerException e){
-		    		log.info("eccezione in receive: " + e);
-		    	}
-		    	//IDevice dispositivo = deviceService.findDevice(MacAddress.NONE, VlanVid.ZERO, IPv4Address.NONE, IPv6Address.NONE, DatapathId.of("00:00:00:00:00:00:00:01"), OFPort.ZERO);
-		    	
-		    	//log.info("IL DEVICE : " + dispositivo.getDeviceKey().toString());
-		    	//SwitchPort[] porteswitch =
-		    	//log.info("RITORNO GETATTACHMENTPOINTS: "+dispositivo.getAttachmentPoints());
-		    	
-		    	//for(int i = 0; i<porteswitch.length; i++){
-		    	//	log.info("OOOOOOOOOOOOOOOOO:   "+porteswitch[i].getSwitchDPID().toString());
-		    	//}
-		    	
-		    	/*for (SwitchPort dstDap : dispositivo.getAttachmentPoints()) {
-					
-		    		log.info("SWITCHOOOOOOOOOOOOOOOOOOOOOO: "+dstDap.getSwitchDPID().toString());
-				}*/
-		    	
-		    	/* Route rute = routingService.getRoute(DatapathId.of("00:00:00:00:00:00:00:02"),DatapathId.of("00:00:00:00:00:00:00:02") , U64.of(0));
-
-		    	log.info("RUTTO LIBERO");
-		    	
-		    	List<NodePortTuple> listaswitch = rute.getPath();
-		    	
-		    	for (NodePortTuple npt: listaswitch){
-		    		log.info("OOOOOOOOOOOOOOOOOOOOOOOOOOOOO: "+npt.getNodeId().toString());
-		    	}
-		    	*/
-		        /* Retrieve the deserialized packet in message */
-		        Ethernet eth = IFloodlightProviderService.bcStore.get(cntx, IFloodlightProviderService.CONTEXT_PI_PAYLOAD);
-		    			 
-		        /* Various getters and setters are exposed in Ethernet */
-		        MacAddress srcMac = eth.getSourceMACAddress();
-		        VlanVid vlanId = VlanVid.ofVlan(eth.getVlanID());
-		        
-		        /* 
-		         * Check the ethertype of the Ethernet frame and retrieve the appropriate payload.
-		         * Note the shallow equality check. EthType caches and reuses instances for valid types.
-		         */
-		       if (eth.getEtherType() == EthType.IPv4) {
-		            /* We got an IPv4 packet; get the payload from Ethernet */
-		           
-		        	//log.info("PACCHETTI IPV4");
-		        	IPv4 ipv4 = (IPv4) eth.getPayload();
-		        	//log.info("Source: "+ ipv4.getSourceAddress());
-		        	//log.info("Destination: "+ ipv4.getDestinationAddress());
-		        	 
-		            /* Various getters and setters are exposed in IPv4 */
-		            byte[] ipOptions = ipv4.getOptions();
-		            IPv4Address dstIp = ipv4.getDestinationAddress();
-		             
-		            /* 
-		             * Check the IP protocol version of the IPv4 packet's payload.
-		             * Note the deep equality check. Unlike EthType, IpProtocol does
-		             * not cache valid/common types; thus, all instances are unique.
-		             */
-		            if (ipv4.getProtocol().equals(IpProtocol.TCP)) {
-		                /* We got a TCP packet; get the payload from IPv4 */
-		                TCP tcp = (TCP) ipv4.getPayload();
-		                
-		                /* Various getters and setters are exposed in TCP */
-		                TransportPort srcPort = tcp.getSourcePort();
-		              //  log.info("*******SOURCE PORT: ", srcPort);
-		                TransportPort dstPort = tcp.getDestinationPort();
-		                short flags = tcp.getFlags();
-		                 
-		                /* Your logic here! */
-		            } else if (ipv4.getProtocol().equals(IpProtocol.UDP)) {
-		                /* We got a UDP packet; get the payload from IPv4 */
-		                UDP udp = (UDP) ipv4.getPayload();
-		  
-		                /* Various getters and setters are exposed in UDP */
-		                TransportPort srcPort = udp.getSourcePort();
-		                //log.info("*******SOURCE PORT: "+ srcPort);
-		                TransportPort dstPort = udp.getDestinationPort();
-		                 
-		                /* Your logic here! */
-		        		return Command.CONTINUE;
-		            }
-		 
-		        } else if (eth.getEtherType() == EthType.ARP) {
-		        	log.info("PACCHETTI ARP");
-		        	/* We got an ARP packet; get the payload from Ethernet */
-		            ARP arp = (ARP) eth.getPayload();
-		      /*    log.info("Lo switch e : "+ sw.getId().toString());
-		            log.info("Source: "+ arp.getSenderProtocolAddress());
-		            log.info("Source: "+ eth.getSourceMACAddress());
-		        	log.info("Destination: "+ arp.getTargetProtocolAddress());
-		        	log.info("Destination: "+ eth.getDestinationMACAddress());
-		        */
-		            
-
-		        	
-		        	
-		        	//PROVA AD AGGIUNGERE UNA REGOLA
-		      /*  	OFFactory myFactory = sw.getOFFactory();
-		        	OFFlowMod.Builder fmb = null;
-		        	OFActions actions = myFactory.actions();
-		        	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
-		        	OFActionOutput output = actions.buildOutput().setPort(OFPort.ALL).build();
-		        	
-		        	
-		        	
-		        	actionList.add(output);
-		        	Match myMatch = myFactory.buildMatch()
-		        			//.setExact(MatchField.IN_PORT, OFPort.of(1))
-		         			.setExact(MatchField.ETH_TYPE, EthType.ARP)
-		         			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.1"))
-		        			.setExact(MatchField.ARP_TPA, IPv4Address.of("10.0.0.2"))
-		        			.build();
-		        	
-		        	Match myMatch3 = myFactory.buildMatch()
-		        			.setExact(MatchField.ETH_TYPE,  EthType.IPv4)
-		        			.setExact(MatchField.IPV4_SRC, IPv4Address.of("10.0.0.1"))
-		        			.setExact(MatchField.IPV4_DST, IPv4Address.of("10.0.0.2"))
-		        			.build();
-		        	
-		        	fmb = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowAdd(); //modify o add ?
-		        	
-		        	OFFlowMod flowMod = fmb.setActions(actionList)
-    						.setPriority(FlowModUtils.PRIORITY_MAX)
-    						.setMatch(myMatch)
-    						.build();
-		        	OFFlowMod flowMod3 = fmb.setActions(actionList)
-    						.setPriority(FlowModUtils.PRIORITY_MAX)
-    						.setMatch(myMatch3)
-    						.build();
-    	
-		        	//staticFlowEntryPusherService.addFlow("regola1", flowMod, DatapathId.of("00:00:00:00:00:00:00:02"));
-		        	staticFlowEntryPusherService.addFlow("regola1010", flowMod3, DatapathId.of("00:00:00:00:00:00:00:02"));
-		        	//staticFlowEntryPusherService.addFlow("regola2", flowMod, DatapathId.of("00:00:00:00:00:00:00:01"));
-		        	//staticFlowEntryPusherService.addFlow("regola3", flowMod, DatapathId.of("00:00:00:00:00:00:00:03"));
-		        	
-		        	
-		     
-		        	//seconda regola
-		        	OFFlowMod.Builder fmb1 = null;
-		        	Match myMatch2 = myFactory.buildMatch()
-		        			//.setExact(MatchField.IN_PORT, OFPort.of(2))
-		         			.setExact(MatchField.ETH_TYPE, EthType.ARP)
-		         			.setExact(MatchField.ARP_SPA, IPv4Address.of("10.0.0.2"))
-		        			.setExact(MatchField.ARP_TPA, IPv4Address.of("10.0.0.1"))
-		        			.build();
-		        	
-		        	Match myMatch4 = myFactory.buildMatch()
-		        			.setExact(MatchField.ETH_TYPE,  EthType.IPv4)
-		        			.setExact(MatchField.IPV4_SRC, IPv4Address.of("10.0.0.2"))
-		        			.setExact(MatchField.IPV4_DST, IPv4Address.of("10.0.0.1"))
-		        			.build();
-		        	
-		        	ArrayList<OFAction> actionList1 = new ArrayList<OFAction>();
-		        	OFActionOutput output1 = actions.buildOutput().setPort(OFPort.ALL).build();
-		        	actionList1.add(output1);
-
-		        	
-		        	
-		        	fmb1 = OFFactories.getFactory(sw.getOFFactory().getVersion()).buildFlowAdd(); //modify o add ?
-		        	
-		        	
-		        	
-		        	OFFlowMod flowMod1 = fmb1.setActions(actionList1)
-    						.setPriority(FlowModUtils.PRIORITY_MAX)
-    						.setMatch(myMatch2)
-    						.build();
-		
-		        	OFFlowMod flowMod4 = fmb1.setActions(actionList1)
-    						.setPriority(FlowModUtils.PRIORITY_MAX)
-    						.setMatch(myMatch4)
-    						.build();
-    	
-		        	//staticFlowEntryPusherService.addFlow("regola4", flowMod1, DatapathId.of("00:00:00:00:00:00:00:02"));
-		        	staticFlowEntryPusherService.addFlow("regola4040", flowMod4, DatapathId.of("00:00:00:00:00:00:00:02"));
-		        	//staticFlowEntryPusherService.addFlow("regola5", flowMod1, DatapathId.of("00:00:00:00:00:00:00:01"));
-		        	//staticFlowEntryPusherService.addFlow("regola6", flowMod1, DatapathId.of("00:00:00:00:00:00:00:03"));
-		*/ 
-		 			
-		 
-		            /* Various getters and setters are exposed in ARP */
-		            boolean gratuitous = arp.isGratuitous();
-		            
-		            //return Command.CONTINUE;
-		 
-		        } else {
-		            /* Unhandled ethertype */
-		        }
-		        break;
+				return Command.STOP;
 		    default:
 		        break;
 		    }

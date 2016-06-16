@@ -1,8 +1,10 @@
 package net.floodlightcontroller.sdnproject;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 
@@ -119,7 +121,7 @@ public final class SDNUtils {
 		try {
 			row = resultSet.iterator().next().getRow();
 			log.info("getServers: row: " + row.toString());
-			servers = (int)row.get(SDNProject.COLUMN_U_SERVERS);
+			servers = (int) row.get(SDNProject.COLUMN_U_SERVERS);
 		}
 		catch(NoSuchElementException e) {
 			log.error("No result for user {}", user, e);
@@ -169,7 +171,7 @@ public final class SDNUtils {
 	public static void removeServers(IStorageSourceService storageSource, int servers, String user) {
 		// if number of specified servers >= owned servers, remove all servers
 		int max = getServers(storageSource, user);
-		servers = (servers>max)?max:servers;
+		servers = (servers > max) ? max : servers;
 		
 		for(int i=0; i<servers; i++) {
 			Map<String,Object> row = new HashMap<String,Object>();
@@ -184,7 +186,7 @@ public final class SDNUtils {
 	/**
 	 * finds the ID of the server with highest virtual address assigned to the specified user
 	 * @param storageSource is reference to the storage source containing the table
-	 * @param user is the user whose server are to be checked
+	 * @param user is the user whose servers are to be checked
 	 * @return the ID of the server with the highest virtual address
 	 * */
 	public static int getLastAssignedServerID(IStorageSourceService storageSource, String user) {
@@ -197,11 +199,11 @@ public final class SDNUtils {
 		
 		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
 			row = it.next().getRow();
-			String address = (String)row.get(SDNProject.COLUMN_S_VIRTUAL);
+			String address = (String) row.get(SDNProject.COLUMN_S_VIRTUAL);
 			if(isHigher(address, max)) {
 				// address is higher than max
 				max = address;
-				ID = (Integer)row.get(SDNProject.COLUMN_S_ID);
+				ID = (Integer) row.get(SDNProject.COLUMN_S_ID);
 			}
 		}
 		
@@ -221,15 +223,15 @@ public final class SDNUtils {
 		int newInt = Integer.parseInt(splittedNew[2]);
 		
 		//check penultimate part of the address
-		if(newInt>oldInt)
+		if(newInt > oldInt)
 			return true;
-		if(newInt<oldInt)
+		if(newInt < oldInt)
 			return false;
 		
 		//check last part of the address
 		oldInt = Integer.parseInt(splittedOld[3]);
 		newInt = Integer.parseInt(splittedNew[3]);
-		if(newInt>oldInt)
+		if(newInt > oldInt)
 			return true;
 		return false;		
 	}
@@ -250,13 +252,50 @@ public final class SDNUtils {
 		try {
 			row = resultSet.iterator().next().getRow();
 			log.info("getFirstFreeServer: row : " + row.toString());
-			ID = (int)row.get(SDNProject.COLUMN_S_ID);
+			ID = (int) row.get(SDNProject.COLUMN_S_ID);
 		}
 		catch(NoSuchElementException e) {
 			log.error("No free servers available!", e);
 		}
 		
 		return ID;
+	}
+	
+	/**
+	 * finds the addresses belonging to the specified user
+	 * @param storageSource is reference to the storage source containing the table
+	 * @param user is the user whose servers are to be checked
+	 * @return a list of the addresses belonging to the user
+	 * */
+	public static List<String> getPoolAddresses(IStorageSourceService storageSource, String user) {
+		List<String> addresses = new ArrayList<>();
+		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, OperatorPredicate.Operator.EQ, user);
+		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
+			new String[] {SDNProject.COLUMN_S_PHYSICAL}, predicate, null);
+		Map<String, Object> row;
+		
+		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
+			row = it.next().getRow();
+			String address = (String) row.get(SDNProject.COLUMN_S_PHYSICAL);
+			addresses.add(address);
+		}
+		
+		return addresses;
+	}
+	
+	/**
+	 * insert a new rule in the rules table
+	 * @param storageSource is reference to the storage source containing the table
+	 * @param ruleName the name to assign to the rule, must be unique
+	 * @param sourceAddress address of the source host
+	 * @param destAddress address of the destination host
+	 * */
+	public static void addToRulesTable(IStorageSourceService storageSource, String ruleName, String sourceAddress, String destAddress) {
+		Map<String,Object> row = new HashMap<String,Object>(); 
+		row.put(SDNProject.COLUMN_R_NAME, ruleName);
+		row.put(SDNProject.COLUMN_R_SRC, sourceAddress);
+		row.put(SDNProject.COLUMN_R_DST, destAddress);
+		storageSource.insertRowAsync(SDNProject.TABLE_RULES, row);
 	}
 	
 }
