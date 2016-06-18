@@ -38,10 +38,6 @@ public class SDNProjectAddResource extends ServerResource {
 		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
 		Map<String,Object> row = new HashMap<String,Object>();
 		
-		if (log.isDebugEnabled()) {
-			log.debug("request received: " + jsonData);
-		}
-		
 		Map<String, Object> data = new HashMap<String, Object>();
 		String user = null;
 		int servers = 0;
@@ -51,13 +47,11 @@ public class SDNProjectAddResource extends ServerResource {
 			return "{\"status\" : \"Error! No data posted.\"}";
 		}
 		
-		log.info("received json: " + jsonData);
-		
 		try {
 			data = SDNUtils.jParse(jsonData);
 		}
 		catch(IOException e) {
-			log.error("error while parsing received data: " + jsonData, e);
+			log.error("Error while parsing received data: " + jsonData, e);
 			return "{\"status\" : \"Error retrieving client info, see log for details.\"}";
 		}
 		try {
@@ -65,19 +59,19 @@ public class SDNProjectAddResource extends ServerResource {
 			servers = Integer.parseInt((String)data.get(SDNProject.COLUMN_U_SERVERS));
 		}
 		catch(NullPointerException e) {
-			log.error("error in the received json data: " + jsonData, e);
+			log.error("Error in the received json data: " + jsonData, e);
 			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
 		}
 		
 		/* check if enough servers are available */
 		if(servers > SDNProject.available_servers) {
-			log.error("error while assigning requested servers, only " + SDNProject.available_servers + " are available");
+			log.error("Error while assigning requested servers, only " + SDNProject.available_servers + " are available");
 			return "{\"status\" : \"Not enough servers available, see log for details.\"}";
 		}
 		
 		/* check if username exists */
 		if(!SDNUtils.userExists(storageSource, user)) {
-			log.error("error while fetching user, user {} not existent!", jsonData);
+			log.error("Error while fetching user, user {} not existent!", jsonData);
 			return "{\"status\" : \"User not existent, see log for details.\"}";
 		}
 
@@ -88,14 +82,14 @@ public class SDNProjectAddResource extends ServerResource {
 		int tot_servers = SDNUtils.getServers(storageSource, user) + servers;
 		row.put(SDNProject.COLUMN_U_SERVERS, tot_servers);
 		storageSource.updateRow(SDNProject.TABLE_USERS, user, row);
-		
-		log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
 
 		/* new rules defined in SDNProject.rowsModified() */
 
 		SDNProject.available_servers -= servers;
 
         setStatus(Status.SUCCESS_OK);
+        
+        log.info("Added {} servers to user {}", servers, user);
 		
 		return "{\"status\" : \"Success\", \"details\" : \"New servers added to the pool, user "
 			+ user + " now has " + tot_servers + " servers. Run /info to get informations.\"}";

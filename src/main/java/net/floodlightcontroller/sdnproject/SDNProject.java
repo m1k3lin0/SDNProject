@@ -22,17 +22,11 @@ import org.projectfloodlight.openflow.protocol.action.OFActionOutput;
 import org.projectfloodlight.openflow.protocol.action.OFActions;
 import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
-import org.projectfloodlight.openflow.protocol.ver13.OFFactoryVer13;
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
-import org.projectfloodlight.openflow.types.IPv6Address;
-import org.projectfloodlight.openflow.types.IpProtocol;
-import org.projectfloodlight.openflow.types.MacAddress;
 import org.projectfloodlight.openflow.types.OFPort;
-import org.projectfloodlight.openflow.types.TransportPort;
 import org.projectfloodlight.openflow.types.U64;
-import org.projectfloodlight.openflow.types.VlanVid;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -45,22 +39,11 @@ import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
 import net.floodlightcontroller.core.module.IFloodlightService;
-import net.floodlightcontroller.devicemanager.IDevice;
-import net.floodlightcontroller.devicemanager.IDeviceService;
-import net.floodlightcontroller.devicemanager.SwitchPort;
-import net.floodlightcontroller.packet.ARP;
-import net.floodlightcontroller.packet.Ethernet;
-import net.floodlightcontroller.packet.IPv4;
-import net.floodlightcontroller.packet.LLDP;
-import net.floodlightcontroller.packet.TCP;
-import net.floodlightcontroller.packet.UDP;
 import net.floodlightcontroller.restserver.IRestApiService;
 import net.floodlightcontroller.routing.IRoutingService;
-import net.floodlightcontroller.routing.Link;
 import net.floodlightcontroller.routing.Route;
 import net.floodlightcontroller.sdnproject.web.SDNProjectRoutable;
 import net.floodlightcontroller.staticflowentry.IStaticFlowEntryPusherService;
-import net.floodlightcontroller.statistics.web.SwitchPortBandwidthSerializer;
 import net.floodlightcontroller.storage.CompoundPredicate;
 import net.floodlightcontroller.storage.IPredicate;
 import net.floodlightcontroller.storage.IResultSet;
@@ -71,25 +54,22 @@ import net.floodlightcontroller.topology.NodePortTuple;
 import net.floodlightcontroller.storage.OperatorPredicate;
 import net.floodlightcontroller.storage.OperatorPredicate.Operator;
 import net.floodlightcontroller.util.FlowModUtils;
-import net.floodlightcontroller.util.OFMessageDamper;
 
 public class SDNProject implements IOFMessageListener, IFloodlightModule, IStorageSourceListener {
 
 	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
 
 	/* network parameters */
-	// TODO count the available servers, make private and implement method get and update?
+	// TODO see if we can get these parameters from outside the code
 	protected static final int FANOUT = 2;
 	protected static final int DEPTH = 4;
-	protected static final int tot_servers = (int)Math.pow(FANOUT, DEPTH);
+	protected static final int tot_servers = (int) Math.pow(FANOUT, DEPTH);
 	public static int available_servers;
 
-	
-	public static final String FIRST_VIRTUAL_ADDR = "192.168.";
-	public static final String FIRST_PHYSICAL_ADDR = "10.0.";
+	public static final String FIRST_VIRTUAL_ADDR 	= "192.168.";
+	public static final String FIRST_PHYSICAL_ADDR	= "10.0.";
 
-	/* module constant */
-	
+	/* module constants */
 	// table of servers
 	public static final String TABLE_SERVERS 	= "SDNProject_servers";
 	public static final String COLUMN_S_ID		= "ID";
@@ -114,11 +94,58 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected IFloodlightProviderService floodlightProviderService;
 	protected IStaticFlowEntryPusherService staticFlowEntryPusherService;
 	protected IRoutingService routingService;
-	protected IDeviceService deviceService;
 	protected ITopologyService topologyService;
 	protected IOFSwitchService switchService;
 
-	//****************************************************
+	/* module private methods */
+	/**
+	 * initializes the servers table with ID and Physical IP address
+	 * ID is an incremental number, starting from 1
+	 * IP address is assigned in an incremental manner starting from 10.0.0.1
+	 * all other fields are filled with null values
+	 * @param servers total number of servers
+	 * */
+	private void initServersTable() {
+		Integer ID = 1;
+		int servers = tot_servers;
+		for (int i=1; i<= servers; i++) {
+			//skip addresses ending with 0
+			if (i%256 == 0) {
+				servers++; 
+				continue;
+			}
+			// prepare row
+			Map<String,Object> row = new HashMap<String,Object>();			
+			row.put(COLUMN_S_ID, ID);
+			row.put(COLUMN_S_PHYSICAL, FIRST_PHYSICAL_ADDR + i/256 +"." + (i%256));
+			row.put(COLUMN_S_USER, null);
+			row.put(COLUMN_S_VIRTUAL, null);
+			
+			storageSourceService.insertRow(TABLE_SERVERS, row);
+			ID++;
+		}			
+	}
+	
+	/**
+	 * finds the edge switch the specified IP address is attached to
+	 * @param IPAddress is the IP address of the host
+	 * @return the pid of the attachment point of the specified IP
+	 * */
+	private DatapathId getAP(String IPAddress) {
+		// TODO modify this method if we want to get the AP independently from the topology 
+		Set<DatapathId> allSwitches = switchService.getAllSwitchDpids(); //get all the switches in the topology
+		List<DatapathId> edgeSwitches = new ArrayList<DatapathId>();
+		for (DatapathId sw : allSwitches) {
+			if(topologyService.isEdge(sw, OFPort.of(1))){ //it is sufficient to check only the first port
+				edgeSwitches.add(sw);
+			}
+		}
+		Collections.sort(edgeSwitches); //sort
+		
+		int index = (IPv4Address.of(IPAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt())/FANOUT;
+		
+		return edgeSwitches.get(index);
+	}
 	
 	/**
 	 * finds all the switches on the path that connect two devices identified by
@@ -127,25 +154,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	 * @param destAddress is the IP address of the destination host
 	 * @return a list of all the switches on the path as List of DatapathId
 	 * */
-	private List<DatapathId> getSwitches(String sourceAddress, String destAddress) {
+	private List<DatapathId> getSwitchesInPath(String sourceAddress, String destAddress) {
 		
 		List<DatapathId> switches = new ArrayList<DatapathId>();
 		
-		Set<DatapathId> allSwitches = switchService.getAllSwitchDpids(); //get all the switches in the topology
-		List<DatapathId> edgeSwitches = new ArrayList<DatapathId>();
-		for (DatapathId sw : allSwitches) {
-			if(topologyService.isEdge(sw, OFPort.of(1))){ //it is sufficient to check only the port 1
-				edgeSwitches.add(sw);
-			}
-		}
-		Collections.sort(edgeSwitches); //sort
-		
-		int index = (IPv4Address.of(sourceAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt())/FANOUT;
-		DatapathId srcSwitch = edgeSwitches.get(index); //DatapathId.of("00:00:00:00:00:00:00:02");
-		index = (IPv4Address.of(destAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt())/FANOUT;
-		DatapathId dstSwitch = edgeSwitches.get(index);
-		
-		
+		DatapathId srcSwitch = getAP(sourceAddress);
+		DatapathId dstSwitch = getAP(destAddress);
 		
 		//if they are equal, there's no need to compute the route because the switch is just one
 		if(srcSwitch.equals(dstSwitch)){
@@ -160,7 +174,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			route = routingService.getRoute(srcSwitch, dstSwitch, U64.of(0));
 		}
 		catch(Exception e) {
-			log.info("eccezione in getSwitches: {}", e);
+			log.error("Exception in getSwitches. {}", e);
 		}
 
 		// avoid duplicates
@@ -185,7 +199,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			row = it.next().getRow();
 			String rule = (String)row.get(COLUMN_R_NAME);
 			staticFlowEntryPusherService.deleteFlow(rule);
-			log.info("deleted rule {}", rule);
+			log.info("Deleted rule {}", rule);
 		}
 	}
 	
@@ -199,13 +213,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			if(srcAddress.equals(newAddress))
 				continue;
 			// get switches' PIDs that connect the two hosts
-			List<DatapathId> switchesList = getSwitches(srcAddress, newAddress);
+			List<DatapathId> switchesList = getSwitchesInPath(srcAddress, newAddress);
 			//define new rule for each switch
 			for(DatapathId sw : switchesList) {
 				//each rule name must be unique, call them as srcAddress-dstAddress-switchPID
 				String ruleName = srcAddress + "-" + newAddress + "-" + sw.toString();
 				SDNUtils.addToRulesTable(storageSourceService, ruleName, srcAddress, newAddress);
-				log.info("added rule {}", ruleName);
 
 				// add new rule to the switch
 				addNewFlowMod(ruleName, srcAddress, newAddress, sw, true);
@@ -218,13 +231,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			if(dstAddress.equals(newAddress))
 				continue;
 			// get switches' PIDs that connect the two hosts
-			List<DatapathId> switchesList = getSwitches(newAddress, dstAddress);
+			List<DatapathId> switchesList = getSwitchesInPath(newAddress, dstAddress);
 			//define new rule for each switch
 			for(DatapathId sw : switchesList) {
 				//each rule name must be unique, called them as srcAddress-dstAddress-switchPID
 				String ruleName = newAddress + "-" + dstAddress + "-" + sw.toString();
 				SDNUtils.addToRulesTable(storageSourceService, ruleName, newAddress, dstAddress);
-				log.info("added rule {}", ruleName);
 
 				// add new rule to the switch
 				addNewFlowMod(ruleName, newAddress, dstAddress, sw, true);
@@ -242,10 +254,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	 * @param ARP set to true if you want to add the rule also for ARP packets
 	 * */
 	private void addNewFlowMod(String ruleName, String srcAddress, String dstAddress, DatapathId pid, boolean ARP) {
-		// we assumed to use OF13
-		// TODO make more dynamic by getting the version from the switch
-		// (switchService.getSwitch(pid)).getOFFactory();
-		OFFactory myFactory = OFFactoryVer13.INSTANCE;
+		OFFactory myFactory = switchService.getSwitch(pid).getOFFactory();
     	OFFlowMod.Builder fmb = null;
     	OFActions actions = myFactory.actions();
     	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
@@ -281,21 +290,21 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 				.build();
 
     	staticFlowEntryPusherService.addFlow(ruleName, flowModIPv4, pid);
+		log.info("added rule {}", ruleName);
     	
     	if(ARP) {
     		ruleName += "-ARP";
 			SDNUtils.addToRulesTable(storageSourceService, ruleName, srcAddress, dstAddress);
-			log.info("added rule {}", ruleName);
     		staticFlowEntryPusherService.addFlow(ruleName, flowModARP, pid);
+			log.info("added rule {}", ruleName);
 
     	}
 	}
-	//****************************************************
+	/* end of private methods */
 	
 	@Override
 	public void rowsModified(String tableName, Set<Object> rowKeys){
-		// called when a row of the table has been inserted or modified	
-		log.info("row inserted in table {} - " + "ID:" + rowKeys.toString(), tableName);
+		// called when a row of the table has been inserted or modified
 
 		// update rules if the modified table is TABLE_SERVERS
 		if(tableName == TABLE_SERVERS) {
@@ -320,19 +329,16 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 					}
 				}
 			}
-		}
-			
+		}		
 	}
 	
 	@Override
 	public void rowsDeleted(String tableName, Set<Object> rowKeys){
 		// called when a row of the table has been deleted
-		log.info("row deleted from table {} - " + "ID:" + rowKeys.toString(), tableName);
 	}
 	
 	@Override
 	public String getName() {
-		// TODO Auto-generated method stub
 		return SDNProject.class.getSimpleName();
 	}
 
@@ -367,9 +373,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		l.add(IRestApiService.class);
 		l.add(IStorageSourceService.class);
 		l.add(IStaticFlowEntryPusherService.class);
-		
 		l.add(IRoutingService.class);
-		l.add(IDeviceService.class);
 		l.add(ITopologyService.class);
 		l.add(IOFSwitchService.class);
 		return l;
@@ -382,9 +386,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		restAPIService = context.getServiceImpl(IRestApiService.class);
 		storageSourceService = context.getServiceImpl(IStorageSourceService.class);
 		staticFlowEntryPusherService = context.getServiceImpl(IStaticFlowEntryPusherService.class);
-		
 		routingService = context.getServiceImpl(IRoutingService.class);
-		deviceService = context.getServiceImpl(IDeviceService.class);
 		switchService = context.getServiceImpl(IOFSwitchService.class);
 		topologyService = context.getServiceImpl(ITopologyService.class);
 	}
@@ -397,30 +399,22 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		
 		/* initialize network parameters */
 		available_servers = tot_servers;
-		
-		log.info("TOT SERVERS: " + tot_servers);
-		
-		/* create tables */
+		log.info("Total number of servers: " + tot_servers);
 				
-		/* CREATE USERS TABLE */
+		/* create users table */
 		storageSourceService.createTable(TABLE_USERS, null);
 		// column name is primary key
 		storageSourceService.setTablePrimaryKeyName(TABLE_USERS, COLUMN_U_NAME);
 		storageSourceService.addListener(TABLE_USERS, this);
-		
-		if(log.isDebugEnabled())
-			log.debug("created table " + TABLE_USERS + ", with primary key " + COLUMN_U_NAME);
+		log.info("Created table {}", TABLE_USERS);
 
-		/* CREATE RULES TABLE */
+		/* create rules table */
 		storageSourceService.createTable(TABLE_RULES, null);
 		// column rule_name is primary key
 		storageSourceService.setTablePrimaryKeyName(TABLE_RULES, COLUMN_R_NAME);
-		//storageSourceService.addListener(TABLE_RULES, this);
+		log.info("Created table {}", TABLE_RULES);
 
-		if(log.isDebugEnabled())
-			log.debug("created table " + TABLE_RULES + ", with primary key " + COLUMN_R_NAME);
-
-		/* CREATE SERVERS TABLE */
+		/* create servers table */
 		// column user is to be indexed
 		Set<String> indexedColumns = new HashSet<String>();
 		indexedColumns.add(COLUMN_S_USER);				
@@ -428,57 +422,23 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		// column id is primary key
 		storageSourceService.setTablePrimaryKeyName(TABLE_SERVERS, COLUMN_S_ID);
 		storageSourceService.addListener(TABLE_SERVERS, this);
-		
-		if(log.isDebugEnabled())
-			log.debug("created table " + TABLE_SERVERS + ", with primary key " + COLUMN_S_ID);
+		log.info("Created table {}", TABLE_SERVERS);
 
 		//add entries to the servers table (all the server physical addresses and IDs)
-		initServersTable(tot_servers);
+		initServersTable();
 }
 
 	@Override
 	public net.floodlightcontroller.core.IListener.Command receive(
-			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {
- 
-		// this should only return Command.STOP in order to drop all packets received by the controller
-        
+			IOFSwitch sw, OFMessage msg, FloodlightContext cntx) {    
 		switch (msg.getType()) {
-
-		    case PACKET_IN:		    	
+		
+		    case PACKET_IN:		
+				// drop all packets PACKET_IN received by the controller    	
 				return Command.STOP;
 		    default:
 				return Command.CONTINUE;
 		    }
 	}
 	
-	/**
-	 * initializes the servers table with ID and Physical IP address
-	 * ID is an incremental number, starting from 1
-	 * IP address is assigned in an incremental manner starting from 10.0.0.1
-	 * all other fields are filled with null values
-	 * @param servers total number of servers
-	 * */
-	public void initServersTable(int servers){
-		Integer ID = 1;
-		for (int i=1; i<= servers; i++) {
-			//skip addresses ending with 0
-			if (i%256 == 0) {
-				servers++; 
-				continue;
-			}
-			// prepare row
-			Map<String,Object> row = new HashMap<String,Object>();			
-			row.put(COLUMN_S_ID, ID);
-			row.put(COLUMN_S_PHYSICAL, FIRST_PHYSICAL_ADDR + i/256 +"." + (i%256));
-			row.put(COLUMN_S_USER, null);
-			row.put(COLUMN_S_VIRTUAL, null);
-			
-			storageSourceService.insertRow(TABLE_SERVERS, row);
-			ID++;
-			
-			if (log.isDebugEnabled())
-				log.info("new server added to table: " + row.toString()); //print the inserted server attributes
-		}
-			
-	}
 }

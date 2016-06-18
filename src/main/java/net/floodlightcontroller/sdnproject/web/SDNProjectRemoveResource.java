@@ -38,10 +38,6 @@ public class SDNProjectRemoveResource extends ServerResource {
 		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
 		Map<String,Object> row = new HashMap<String,Object>();
 		
-		if (log.isDebugEnabled()) {
-			log.debug("request received: " + jsonData);
-		}
-		
 		Map<String, Object> data = new HashMap<String, Object>();
 		String user = null;
 		int servers = 0;
@@ -52,13 +48,11 @@ public class SDNProjectRemoveResource extends ServerResource {
 			return "{\"status\" : \"Error! No data posted.\"}";
 		}
 		
-		log.info("received json: " + jsonData);
-		
 		try {
 			data = SDNUtils.jParse(jsonData);
 		}
 		catch(IOException e) {
-			log.error("error while parsing received data: " + jsonData, e);
+			log.error("Error while parsing received data: " + jsonData, e);
 			return "{\"status\" : \"Error retrieving client info, see log for details.\"}";
 		}
 		try {
@@ -66,20 +60,19 @@ public class SDNProjectRemoveResource extends ServerResource {
 			servers = Integer.parseInt((String)data.get(SDNProject.COLUMN_U_SERVERS));
 		}
 		catch(NullPointerException e) {
-			log.error("error in the received json data: " + jsonData, e);
+			log.error("Error in the received json data: " + jsonData, e);
 			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
 		}
 		catch(ClassCastException e) {
-			log.error("error in the received json data: " + jsonData, e);
+			log.error("Error in the received json data: " + jsonData, e);
 			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
 		}
 		
 		/* check if username exists */
 		if(!SDNUtils.userExists(storageSource, user)) {
-			log.error("error while fetching user, user {} not existent!", jsonData);
+			log.error("Error while fetching user, user {} not existent!", jsonData);
 			return "{\"status\" : \"User not existent, see log for details.\"}";
 		}
-
 		
 		/* fetch free server addresses & update data in servers table */
 		SDNUtils.removeServers(storageSource, servers, user);
@@ -92,6 +85,7 @@ public class SDNProjectRemoveResource extends ServerResource {
 			SDNProject.available_servers += owned_servers;
 			ret = "{\"status\" : \"Success\", \"details\" : \"All servers removed from the pool, user "
 					+ user + " has been deleted.\"}";
+			log.info("Removed all servers from user {}. User has been deleted", user);
 		}
 		else {
 			//decrease owned servers
@@ -100,7 +94,7 @@ public class SDNProjectRemoveResource extends ServerResource {
 			SDNProject.available_servers += servers;
 			ret = "{\"status\" : \"Success\", \"details\" : \"Servers removed from the pool, user "
 					+ user + " now has " + (owned_servers-servers) + " servers. Run /info to get informations.\"}";
-			log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
+			log.info("Removed {} servers from user {}" + SDNUtils.getServers(storageSource, user), user);
 		}
 		
 		/* rules updated in SDNProject.rowsModified() */

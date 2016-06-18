@@ -36,10 +36,6 @@ public class SDNProjectInfoResource extends ServerResource {
 		 * */
 		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
 		
-		if (log.isDebugEnabled()) {
-			log.debug("request received: " + jsonData);
-		}
-		
 		Map<String, Object> data = new HashMap<String, Object>();
 		String user = null;
 		String ret = null;
@@ -48,14 +44,12 @@ public class SDNProjectInfoResource extends ServerResource {
 			return "{\"status\" : \"Error! No data posted.\"}";
 		}
 		
-		log.info("received json: " + jsonData);
-		
 		/* parse json data */
 		try {
 			data = SDNUtils.jParse(jsonData);
 		}
 		catch(IOException e) {
-			log.error("error while parsing received data: " + jsonData, e);
+			log.error("Error while parsing received data: " + jsonData, e);
 			return "{\"status\" : \"Error retrieving client info, see log for details.\"}";
 		}
 		
@@ -63,17 +57,17 @@ public class SDNProjectInfoResource extends ServerResource {
 			user = (String)data.get(SDNProject.COLUMN_U_NAME);
 		}
 		catch(NullPointerException e) {
-			log.error("error in the received json data: " + jsonData, e);
+			log.error("Error in the received json data: " + jsonData, e);
 			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
 		}
 		catch(ClassCastException e) {
-			log.error("error in the received json data: " + jsonData, e);
+			log.error("Error in the received json data: " + jsonData, e);
 			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
 		}
 		
 		/* check if username exists */
 		if(!SDNUtils.userExists(storageSource, user)) {
-			log.error("error while fetching user, user {} not existent!", user);
+			log.error("Error while fetching user, user {} not existent!", user);
 			return "{\"status\" : \"User not existent, see log for details \"}";
 		}
 		

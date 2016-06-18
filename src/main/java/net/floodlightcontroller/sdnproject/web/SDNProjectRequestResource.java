@@ -39,11 +39,7 @@ public class SDNProjectRequestResource extends ServerResource{
 		 * */
 		IStorageSourceService storageSource = (IStorageSourceService)getContext().getAttributes().get(IStorageSourceService.class.getCanonicalName());
 		Map<String,Object> row = new HashMap<String,Object>();
-		
-		if (log.isDebugEnabled()) {
-			log.debug("request received: " + jsonData);
-		}
-		
+	
 		Map<String, Object> data = new HashMap<String, Object>();
 		String user = null;
 		int servers = 0;
@@ -53,13 +49,11 @@ public class SDNProjectRequestResource extends ServerResource{
 			return "{\"status\" : \"Error! No data posted.\"}";
 		}
 		
-		log.info("received json: " + jsonData);
-		
 		try {
 			data = SDNUtils.jParse(jsonData);
 		}
 		catch(IOException e) {
-			log.error("error while parsing received data: " + jsonData, e);
+			log.error("Error while parsing received data: " + jsonData, e);
 			return "{\"status\" : \"Error retrieving client info, see log for details.\"}";
 		}
 		try {
@@ -67,19 +61,19 @@ public class SDNProjectRequestResource extends ServerResource{
 			servers = Integer.parseInt((String)data.get(SDNProject.COLUMN_U_SERVERS));
 		}
 		catch(NullPointerException e) {
-			log.error("error in the received json data: " + jsonData, e);
+			log.error("Error in the received json data: " + jsonData, e);
 			return "{\"status\" : \"Error in json syntax, see log for details.\"}";
 		}
 		
 		/* check if enough servers are available */
 		if(servers > SDNProject.available_servers) {
-			log.error("error while assigning requested servers, only " + SDNProject.available_servers + " are available");
+			log.error("Error while assigning requested servers, only " + SDNProject.available_servers + " are available");
 			return "{\"status\" : \"Not enough servers available, see log for details.\"}";
 		}
 		
 		/* check if username already existent */
 		if(SDNUtils.userExists(storageSource, user)) {
-			log.error("error while creating new user, user {} already existent!", user);
+			log.error("Error while creating new user, user {} already existent!", user);
 			return "{\"status\" : \"User already existent, see log for details.\"}";
 		}
 		
@@ -98,6 +92,8 @@ public class SDNProjectRequestResource extends ServerResource{
 		SDNProject.available_servers -= servers;
 		
         setStatus(Status.SUCCESS_OK);
+        
+        log.info("Assigned {} servers to user {}", servers, user);
 
         return "{\"status\" : \"Success\", \"details\" : \"Run /info to get informations.\"}";
 	}

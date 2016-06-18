@@ -82,10 +82,6 @@ public final class SDNUtils {
 				log.error("Could not decode field from JSON string: {}", current);
 				break;
 			}
-			
-			if(log.isDebugEnabled()) {
-				log.debug("parsing field {}, with value {}", current, parser.getText());
-			}
 		}
 		
 		return entry;
@@ -120,7 +116,6 @@ public final class SDNUtils {
 		// COLUMN_U_NAME is primary key, hence only one result is possible
 		try {
 			row = resultSet.iterator().next().getRow();
-			log.info("getServers: row: " + row.toString());
 			servers = (int) row.get(SDNProject.COLUMN_U_SERVERS);
 		}
 		catch(NoSuchElementException e) {
@@ -152,12 +147,11 @@ public final class SDNUtils {
 			}
 			Map<String,Object> row = new HashMap<String,Object>();
 			Integer ID = SDNUtils.getFirstFreeServer(storageSource);
-			log.info("assignServers: first free server ID: " + ID);
 			virtualAddr = SDNProject.FIRST_VIRTUAL_ADDR + i/256 + "." + i%256; 
 			row.put(SDNProject.COLUMN_S_USER, user);
 			row.put(SDNProject.COLUMN_S_VIRTUAL, virtualAddr);
 			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
-			log.info("assignServers: assigned server " + ID + " to user {}. VIR: {}", user, virtualAddr);
+			log.info("Assigned server " + ID + " to user {}. Virtual Address: {}", user, virtualAddr);
 		}
 	}
 	
@@ -179,7 +173,7 @@ public final class SDNUtils {
 			row.put(SDNProject.COLUMN_S_USER, null);
 			row.put(SDNProject.COLUMN_S_VIRTUAL, null);
 			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
-			log.info("removeServers: removed server " + ID + " to user {}. VIR: {}", user);
+			log.info("Removed server " + ID + " from user {}. Virtual Address: {}", user);
 		}
 	}
 	
@@ -251,7 +245,6 @@ public final class SDNUtils {
 		// return the first result
 		try {
 			row = resultSet.iterator().next().getRow();
-			log.info("getFirstFreeServer: row : " + row.toString());
 			ID = (int) row.get(SDNProject.COLUMN_S_ID);
 		}
 		catch(NoSuchElementException e) {
