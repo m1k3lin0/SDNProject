@@ -79,6 +79,10 @@ public class SDNProjectRemoveResource extends ServerResource {
 			log.error("error while fetching user, user {} not existent!", jsonData);
 			return "{\"status\" : \"User not existent, see log for details.\"}";
 		}
+
+		
+		/* fetch free server addresses & update data in servers table */
+		SDNUtils.removeServers(storageSource, servers, user);
 		
 		/* update users table */
 		int owned_servers = SDNUtils.getServers(storageSource, user);
@@ -96,12 +100,8 @@ public class SDNProjectRemoveResource extends ServerResource {
 			SDNProject.available_servers += servers;
 			ret = "{\"status\" : \"Success\", \"details\" : \"Servers removed from the pool, user "
 					+ user + " now has " + (owned_servers-servers) + " servers. Run /info to get informations.\"}";
+			log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
 		}
-		
-		log.info("new value of servers for user {}: " + SDNUtils.getServers(storageSource, user), user);
-
-		/* fetch free server addresses & update data in servers table */
-		SDNUtils.removeServers(storageSource, servers, user);
 		
 		/* rules updated in SDNProject.rowsModified() */
 

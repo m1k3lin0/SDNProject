@@ -5,6 +5,7 @@ package net.floodlightcontroller.sdnproject;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -39,6 +40,7 @@ import net.floodlightcontroller.core.FloodlightContext;
 import net.floodlightcontroller.core.IFloodlightProviderService;
 import net.floodlightcontroller.core.IOFMessageListener;
 import net.floodlightcontroller.core.IOFSwitch;
+import net.floodlightcontroller.core.internal.IOFSwitchService;
 import net.floodlightcontroller.core.module.FloodlightModuleContext;
 import net.floodlightcontroller.core.module.FloodlightModuleException;
 import net.floodlightcontroller.core.module.IFloodlightModule;
@@ -49,6 +51,7 @@ import net.floodlightcontroller.devicemanager.SwitchPort;
 import net.floodlightcontroller.packet.ARP;
 import net.floodlightcontroller.packet.Ethernet;
 import net.floodlightcontroller.packet.IPv4;
+import net.floodlightcontroller.packet.LLDP;
 import net.floodlightcontroller.packet.TCP;
 import net.floodlightcontroller.packet.UDP;
 import net.floodlightcontroller.restserver.IRestApiService;
@@ -75,10 +78,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
 
 	/* network parameters */
-	// count the available servers, make private and implement method get and update?
-	// TODO get total number from python script and initialize in init
-	protected static final int tot_servers = 10;
+	// TODO count the available servers, make private and implement method get and update?
+	protected static final int FANOUT = 2;
+	protected static final int DEPTH = 4;
+	protected static final int tot_servers = (int)Math.pow(FANOUT, DEPTH);
 	public static int available_servers;
+
 	
 	public static final String FIRST_VIRTUAL_ADDR = "192.168.";
 	public static final String FIRST_PHYSICAL_ADDR = "10.0.";
@@ -109,7 +114,9 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected IFloodlightProviderService floodlightProviderService;
 	protected IStaticFlowEntryPusherService staticFlowEntryPusherService;
 	protected IRoutingService routingService;
-	
+	protected IDeviceService deviceService;
+	protected ITopologyService topologyService;
+	protected IOFSwitchService switchService;
 
 	//****************************************************
 	
@@ -123,10 +130,22 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	private List<DatapathId> getSwitches(String sourceAddress, String destAddress) {
 		
 		List<DatapathId> switches = new ArrayList<DatapathId>();
-		// TODO find a way to take switch pid to which the addresses are connected
-		DatapathId srcSwitch = DatapathId.of("00:00:00:00:00:00:00:02");
-		DatapathId dstSwitch = DatapathId.of("00:00:00:00:00:00:00:03");
-		//----------------
+		
+		Set<DatapathId> allSwitches = switchService.getAllSwitchDpids(); //get all the switches in the topology
+		List<DatapathId> edgeSwitches = new ArrayList<DatapathId>();
+		for (DatapathId sw : allSwitches) {
+			if(topologyService.isEdge(sw, OFPort.of(1))){ //it is sufficient to check only the port 1
+				edgeSwitches.add(sw);
+			}
+		}
+		Collections.sort(edgeSwitches); //sort
+		
+		int index = (IPv4Address.of(sourceAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt())/FANOUT;
+		DatapathId srcSwitch = edgeSwitches.get(index); //DatapathId.of("00:00:00:00:00:00:00:02");
+		index = (IPv4Address.of(destAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt())/FANOUT;
+		DatapathId dstSwitch = edgeSwitches.get(index);
+		
+		
 		
 		//if they are equal, there's no need to compute the route because the switch is just one
 		if(srcSwitch.equals(dstSwitch)){
@@ -150,6 +169,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	    	if(!switches.contains(npt.getNodeId())) // the pid is not already in the list
 	    		switches.add(npt.getNodeId());
 	    }
+	    
 		return switches;
 	}
 
@@ -349,6 +369,9 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		l.add(IStaticFlowEntryPusherService.class);
 		
 		l.add(IRoutingService.class);
+		l.add(IDeviceService.class);
+		l.add(ITopologyService.class);
+		l.add(IOFSwitchService.class);
 		return l;
 	}
 
@@ -361,7 +384,9 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		staticFlowEntryPusherService = context.getServiceImpl(IStaticFlowEntryPusherService.class);
 		
 		routingService = context.getServiceImpl(IRoutingService.class);
-		
+		deviceService = context.getServiceImpl(IDeviceService.class);
+		switchService = context.getServiceImpl(IOFSwitchService.class);
+		topologyService = context.getServiceImpl(ITopologyService.class);
 	}
 
 	@Override
@@ -419,7 +444,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
         
 		switch (msg.getType()) {
 
-		    case PACKET_IN:
+		    case PACKET_IN:		    	
 				return Command.STOP;
 		    default:
 				return Command.CONTINUE;
