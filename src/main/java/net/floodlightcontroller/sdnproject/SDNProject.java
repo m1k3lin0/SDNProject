@@ -60,14 +60,15 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
 
 	/* network parameters */
-	// TODO see if we can get these parameters from outside the code
-	protected static final int FANOUT = 2;
-	protected static final int DEPTH = 4;
-	protected static final int tot_servers = (int) Math.pow(FANOUT, DEPTH);
+	// parameters are initialized in init() method, according to config file floodlightdeafault.properties
+	protected static int FANOUT;
+	protected static int DEPTH;
+	protected static int tot_servers;
 	public static int available_servers;
 
-	public static final String FIRST_VIRTUAL_ADDR 	= "192.168.";
-	public static final String FIRST_PHYSICAL_ADDR	= "10.0.";
+	public static String FIRST_VIRTUAL_ADDR;
+	public static String FIRST_PHYSICAL_ADDR;
+	public static String BROADCAST_ADDR;
 
 	/* module constants */
 	// table of servers
@@ -129,12 +130,13 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	/**
 	 * finds the edge switch the specified IP address is attached to
 	 * @param IPAddress is the IP address of the host
-	 * @return the pid of the attachment point of the specified IP
+	 * @return the pair of pid and port of the attachment point of the specified IP
 	 * */
-	private DatapathId getAP(String IPAddress) {
+	private NodePortTuple getAP(String IPAddress) {
 		// TODO modify this method if we want to get the AP independently from the topology 
 		Set<DatapathId> allSwitches = switchService.getAllSwitchDpids(); //get all the switches in the topology
 		List<DatapathId> edgeSwitches = new ArrayList<DatapathId>();
+		//get all the edge switches in the topology
 		for (DatapathId sw : allSwitches) {
 			if(topologyService.isEdge(sw, OFPort.of(1))){ //it is sufficient to check only the first port
 				edgeSwitches.add(sw);
@@ -142,9 +144,12 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		}
 		Collections.sort(edgeSwitches); //sort
 		
-		int index = (IPv4Address.of(IPAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt())/FANOUT;
+		int range = IPv4Address.of(IPAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt();
+		int index = range/FANOUT;
 		
-		return edgeSwitches.get(index);
+		int port = (range%FANOUT) + 1;
+		
+		return new NodePortTuple(edgeSwitches.get(index),OFPort.of(port));
 	}
 	
 	/**
@@ -152,18 +157,22 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	 * the provided IP addresses
 	 * @param sourceAddress is the IP address of the source host
 	 * @param destAddress is the IP address of the destination host
-	 * @return a list of all the switches on the path as List of DatapathId
+	 * @return a list of all the switches on the path and relative outport as List of NodePortTuple
 	 * */
-	private List<DatapathId> getSwitchesInPath(String sourceAddress, String destAddress) {
+	private List<NodePortTuple> getSwitchesInPath(String sourceAddress, String destAddress) {
 		
-		List<DatapathId> switches = new ArrayList<DatapathId>();
-		
-		DatapathId srcSwitch = getAP(sourceAddress);
-		DatapathId dstSwitch = getAP(destAddress);
+		List<NodePortTuple> switchList = new ArrayList<NodePortTuple>(); //list for the switches in the path
+		List<NodePortTuple> switches = new ArrayList<NodePortTuple>(); //list for the switches+outport
+		//compute the first switch+port connected to ip address
+		NodePortTuple srcNode = getAP(sourceAddress);
+		NodePortTuple dstNode = getAP(destAddress);
+		//compute the 2 switches
+		DatapathId srcSwitch = srcNode.getNodeId();
+		DatapathId dstSwitch = dstNode.getNodeId();
 		
 		//if they are equal, there's no need to compute the route because the switch is just one
 		if(srcSwitch.equals(dstSwitch)){
-			switches.add(srcSwitch);
+			switches.add(dstNode);
 			return switches;
 		}
 		
@@ -177,14 +186,17 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			log.error("Exception in getSwitches. {}", e);
 		}
 
-		// avoid duplicates
-	    List<NodePortTuple> switchList = route.getPath();
-	    for (NodePortTuple npt: switchList){
-	    	if(!switches.contains(npt.getNodeId())) // the pid is not already in the list
-	    		switches.add(npt.getNodeId());
-	    }
+	    switchList = route.getPath();
 	    
-		return switches;
+	    //route returns duplicated links, so need to prune it down
+	    for (int i = 0; i<switchList.size(); i+=2){
+	    	if(!switches.contains(switchList.get(i))){ //don't add duplicates
+	    		if(!switchList.get(i).getNodeId().equals(dstNode.getNodeId())) //we add the edge switch manually because the route doesn't know the port the hosts are attached to
+	    			switches.add(switchList.get(i));		    		
+	    	}
+	    }
+	    switches.add(dstNode);
+	    return switches;
 	}
 
 	private void deleteRules(String phy_address) {
@@ -213,15 +225,15 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			if(srcAddress.equals(newAddress))
 				continue;
 			// get switches' PIDs that connect the two hosts
-			List<DatapathId> switchesList = getSwitchesInPath(srcAddress, newAddress);
+			List<NodePortTuple> switchesList = getSwitchesInPath(srcAddress, newAddress);
 			//define new rule for each switch
-			for(DatapathId sw : switchesList) {
+			for(NodePortTuple sw : switchesList) {
 				//each rule name must be unique, call them as srcAddress-dstAddress-switchPID
 				String ruleName = srcAddress + "-" + newAddress + "-" + sw.toString();
 				SDNUtils.addToRulesTable(storageSourceService, ruleName, srcAddress, newAddress);
-
+				
 				// add new rule to the switch
-				addNewFlowMod(ruleName, srcAddress, newAddress, sw, true);
+				addNewFlowMod(ruleName, srcAddress, newAddress, sw.getNodeId(), sw.getPortId(), true);
 			}
 		}
 		
@@ -231,15 +243,15 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			if(dstAddress.equals(newAddress))
 				continue;
 			// get switches' PIDs that connect the two hosts
-			List<DatapathId> switchesList = getSwitchesInPath(newAddress, dstAddress);
+			List<NodePortTuple> switchesList = getSwitchesInPath(newAddress, dstAddress);
 			//define new rule for each switch
-			for(DatapathId sw : switchesList) {
+			for(NodePortTuple sw : switchesList) {
 				//each rule name must be unique, called them as srcAddress-dstAddress-switchPID
-				String ruleName = newAddress + "-" + dstAddress + "-" + sw.toString();
+				String ruleName = newAddress + "-" + dstAddress + "-" + sw.toString(); // TODO change name in sw.getNodeId()
 				SDNUtils.addToRulesTable(storageSourceService, ruleName, newAddress, dstAddress);
 
 				// add new rule to the switch
-				addNewFlowMod(ruleName, newAddress, dstAddress, sw, true);
+				addNewFlowMod(ruleName, newAddress, dstAddress, sw.getNodeId(), sw.getPortId(), true);
 			}
 		}
 	}
@@ -251,16 +263,16 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	 * @param srcAddress is the source address
 	 * @param dstAddress is the destination address
 	 * @param pid is the pid of the switch to add the rule on
+	 * @param outPort is the port on which the output needs to be forwarded
 	 * @param ARP set to true if you want to add the rule also for ARP packets
 	 * */
-	private void addNewFlowMod(String ruleName, String srcAddress, String dstAddress, DatapathId pid, boolean ARP) {
+	private void addNewFlowMod(String ruleName, String srcAddress, String dstAddress, DatapathId pid, OFPort outPort, boolean ARP) {
 		OFFactory myFactory = switchService.getSwitch(pid).getOFFactory();
     	OFFlowMod.Builder fmb = null;
     	OFActions actions = myFactory.actions();
     	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
     	OFActionOutput output = actions.buildOutput()
-    			.setPort(OFPort.ALL)
-    			// TODO specify correct port
+    			.setPort(outPort)
     			.build();
     	
     	actionList.add(output);
@@ -291,7 +303,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
     	staticFlowEntryPusherService.addFlow(ruleName, flowModIPv4, pid);
 		log.info("added rule {}", ruleName);
-    	
+
+				
     	if(ARP) {
     		ruleName += "-ARP";
 			SDNUtils.addToRulesTable(storageSourceService, ruleName, srcAddress, dstAddress);
@@ -389,6 +402,15 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		routingService = context.getServiceImpl(IRoutingService.class);
 		switchService = context.getServiceImpl(IOFSwitchService.class);
 		topologyService = context.getServiceImpl(ITopologyService.class);
+
+		// Initialize network parameters from config file
+		Map<String, String> configParams = context.getConfigParams(this);
+		FANOUT = Integer.parseInt(configParams.get("fanout"));
+		DEPTH = Integer.parseInt(configParams.get("depth"));
+		FIRST_PHYSICAL_ADDR = configParams.get("phy_ipbase");
+		FIRST_VIRTUAL_ADDR = configParams.get("vir_ipbase");
+		BROADCAST_ADDR = configParams.get("bcast_address");
+		tot_servers = (int) Math.pow(FANOUT, DEPTH);
 	}
 
 	@Override

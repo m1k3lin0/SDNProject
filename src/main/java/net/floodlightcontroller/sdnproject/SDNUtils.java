@@ -151,7 +151,7 @@ public final class SDNUtils {
 			row.put(SDNProject.COLUMN_S_USER, user);
 			row.put(SDNProject.COLUMN_S_VIRTUAL, virtualAddr);
 			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
-			log.info("Assigned server " + ID + " to user {}. Virtual Address: {}", user, virtualAddr);
+			log.info("Assigned server with ID [" + ID + "] to user {}. Virtual Address: {}", user, virtualAddr);
 		}
 	}
 	
@@ -173,7 +173,7 @@ public final class SDNUtils {
 			row.put(SDNProject.COLUMN_S_USER, null);
 			row.put(SDNProject.COLUMN_S_VIRTUAL, null);
 			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
-			log.info("Removed server " + ID + " from user {}. Virtual Address: {}", user);
+			log.info("Removed server " + ID + " from user {}", user);
 		}
 	}
 	
