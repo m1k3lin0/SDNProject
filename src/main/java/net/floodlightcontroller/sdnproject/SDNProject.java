@@ -19,9 +19,11 @@ import org.projectfloodlight.openflow.protocol.OFMessage;
 import org.projectfloodlight.openflow.protocol.OFType;
 import org.projectfloodlight.openflow.protocol.action.OFAction;
 import org.projectfloodlight.openflow.protocol.action.OFActionOutput;
+import org.projectfloodlight.openflow.protocol.action.OFActionSetField;
 import org.projectfloodlight.openflow.protocol.action.OFActions;
 import org.projectfloodlight.openflow.protocol.match.Match;
 import org.projectfloodlight.openflow.protocol.match.MatchField;
+import org.projectfloodlight.openflow.protocol.oxm.OFOxms;
 import org.projectfloodlight.openflow.types.DatapathId;
 import org.projectfloodlight.openflow.types.EthType;
 import org.projectfloodlight.openflow.types.IPv4Address;
@@ -77,6 +79,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	public static final String COLUMN_S_PHYSICAL= "physical_address";
 	public static final String COLUMN_S_VIRTUAL = "virtual_address";
 	public static final String COLUMN_S_USER 	= "user";
+	public static final String COLUMN_S_OLDUSER = "old_user";
 	
 	// table of the users
 	public static final String TABLE_USERS		= "SDNProject_users";
@@ -199,22 +202,33 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 	    return switches;
 	}
 
-	private void deleteRules(String phy_address) {
-		IPredicate[] predicates = {	new OperatorPredicate(COLUMN_R_SRC, Operator.EQ, phy_address),
-									new OperatorPredicate(COLUMN_R_DST, Operator.EQ, phy_address)};
+	
+	/**
+	 * removes all the rules relative to the specified address
+	 * @param address is the address that has been removed from the pool
+	 * */
+	private void deleteRules(String address) {
+		IPredicate[] predicates = {	new OperatorPredicate(COLUMN_R_SRC, Operator.EQ, address),
+									new OperatorPredicate(COLUMN_R_DST, Operator.EQ, address)};
 		CompoundPredicate predicate = new CompoundPredicate(CompoundPredicate.Operator.OR, false, predicates);
 		IResultSet resultSet = storageSourceService.executeQuery(TABLE_RULES, new String[] {COLUMN_R_NAME}, predicate, null);
 		Map<String, Object> row;
 
-		// delete all flows with phy_address as source or destination address 
+		// delete all flows with address as source or destination address 
 		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
 			row = it.next().getRow();
 			String rule = (String)row.get(COLUMN_R_NAME);
+			storageSourceService.deleteRow(SDNProject.TABLE_RULES, rule);
 			staticFlowEntryPusherService.deleteFlow(rule);
 			log.info("Deleted rule {}", rule);
 		}
 	}
 	
+	/**
+	 * updates all the rules relative to the specified address belonging to the pool of the specified user 
+	 * @param user is the owner of the pool
+	 * @param newAddress is the address that has been added to the pool
+	 * */
 	private void updateRules(String user, String newAddress) {
 		// fetch all the addresses belonging to the user
 		List<String> poolAddresses = SDNUtils.getPoolAddresses(storageSourceService, user);
@@ -247,12 +261,109 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			//define new rule for each switch
 			for(NodePortTuple sw : switchesList) {
 				//each rule name must be unique, called them as srcAddress-dstAddress-switchPID
-				String ruleName = newAddress + "-" + dstAddress + "-" + sw.toString(); // TODO change name in sw.getNodeId()
+				String ruleName = newAddress + "-" + dstAddress + "-" + sw.toString();
 				SDNUtils.addToRulesTable(storageSourceService, ruleName, newAddress, dstAddress);
-
+				
 				// add new rule to the switch
 				addNewFlowMod(ruleName, newAddress, dstAddress, sw.getNodeId(), sw.getPortId(), true);
 			}
+		}
+	}
+	
+	
+	/**
+	 * adds to the action list 2 actions: one that substitutes the destination address with the specified ip
+	 * the other that specifies on which port to output the packets
+	 * @param edgeSwitch is the pair port-pid of the switch the action needs to be set on
+	 * @param destIP is the new destination address
+	 * @param actionList is the action list to which the actions need to be added
+	 * */
+	private void addAction(NodePortTuple edgeSwitch, String destIP, List<OFAction> actionList){
+		OFFactory myFactory = switchService.getSwitch(edgeSwitch.getNodeId()).getOFFactory();
+		OFOxms oxms = myFactory.oxms();
+    	OFActions actions = myFactory.actions();
+    	
+    	OFActionSetField newDest = actions.buildSetField()
+    		    .setField(
+    		        oxms.buildIpv4Dst()
+    		        .setValue(IPv4Address.of(destIP))
+    		        .build()
+    		    )
+    		    .build();
+    	
+    	OFActionOutput output = actions.buildOutput()
+    			.setPort(edgeSwitch.getPortId())
+    			.build();
+    	
+    	actionList.add(newDest);
+    	actionList.add(output);   	
+	}
+	
+	/**
+	 * adds all the broadcast rules relative to the pool of the specified user
+	 * @param user is the owner of the pool
+	 * */
+	private void addBroadcastRules(String user){
+		NodePortTuple edgeSwitch = null;
+		List<String> poolAddresses = SDNUtils.getPoolAddresses(storageSourceService, user);
+		if(poolAddresses.size()==1) 
+			return;
+		
+    	for(String sourceIP : poolAddresses){
+        	ArrayList<OFAction> actionList = new ArrayList<OFAction>();
+	
+    		for(String destIP : poolAddresses){
+    			if(sourceIP.equals(destIP))
+    				continue;
+    			
+    			edgeSwitch = getSwitchesInPath(sourceIP, destIP).get(0);
+    			addAction(edgeSwitch, destIP, actionList);
+    		}
+    		
+    		OFFactory myFactory = switchService.getSwitch(edgeSwitch.getNodeId()).getOFFactory();
+    		OFFlowMod.Builder fmb = myFactory.buildFlowAdd();
+    				
+        	Match myMatchBroad = myFactory.buildMatch()
+         			.setExact(MatchField.ETH_TYPE, EthType.IPv4)
+         			.setExact(MatchField.IPV4_SRC, IPv4Address.of(sourceIP))
+        			.setExact(MatchField.IPV4_DST, IPv4Address.of(BROADCAST_ADDR))
+        			.build();
+        	
+        	OFFlowMod flowModBroadcast = fmb.setActions(actionList)
+    				.setPriority(FlowModUtils.PRIORITY_MAX)
+    				.setMatch(myMatchBroad)
+    				.build();		
+    		
+        	String ruleName = sourceIP + "-" + BROADCAST_ADDR + "-BROADCAST";
+        	
+        	//add flow only if it isn't already present
+        	//if(!SDNUtils.alreadyInTable(storageSourceService, TABLE_RULES, COLUMN_R_NAME, ruleName)){
+            	SDNUtils.addToRulesTable(storageSourceService, ruleName, sourceIP, BROADCAST_ADDR);
+        		staticFlowEntryPusherService.addFlow(ruleName, flowModBroadcast, edgeSwitch.getNodeId());
+        		log.info("added rule {}", ruleName);	
+        	//}
+
+    	} 	
+	}
+	
+	/**
+	 * removes all the broadcast rules relative to the pool of the specified user
+	 * @param user is the owner of the pool
+	 * */
+	private void removeBroadcastRules(String user) {
+		List<String> poolAddresses = SDNUtils.getPoolAddresses(storageSourceService, user);
+				
+		for(String sourceAddress : poolAddresses) {
+			IPredicate[] predicates = {	new OperatorPredicate(COLUMN_R_SRC, Operator.EQ, sourceAddress),
+					new OperatorPredicate(COLUMN_R_DST, Operator.EQ, BROADCAST_ADDR)};
+			CompoundPredicate predicate = new CompoundPredicate(CompoundPredicate.Operator.AND, false, predicates);
+			IResultSet resultSet = storageSourceService.executeQuery(TABLE_RULES, new String[] {COLUMN_R_NAME}, predicate, null);
+			Map<String, Object> row = resultSet.iterator().next().getRow();
+			// there is only one rule for each source address with destination broadcast
+			String rule = (String)row.get(COLUMN_R_NAME);
+			storageSourceService.deleteRow(SDNProject.TABLE_RULES, rule);
+			staticFlowEntryPusherService.deleteFlow(rule);
+			log.info("Deleted rule {}", rule);
 		}
 	}
 	
@@ -276,6 +387,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
     			.build();
     	
     	actionList.add(output);
+    	
     	
     	Match myMatchARP = myFactory.buildMatch()
      			.setExact(MatchField.ETH_TYPE, EthType.ARP)
@@ -303,7 +415,6 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
     	staticFlowEntryPusherService.addFlow(ruleName, flowModIPv4, pid);
 		log.info("added rule {}", ruleName);
-
 				
     	if(ARP) {
     		ruleName += "-ARP";
@@ -324,6 +435,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			
 			String user = null;
 			String address = null;
+			String removedUser = null;
 			
 			for (Object key : rowKeys) {
 				IResultSet resultSet = storageSourceService.getRow(tableName, key);
@@ -332,6 +444,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 					Map<String, Object> row = it.next().getRow();
 					user = (String) row.get(COLUMN_S_USER);
 					address = (String) row.get(COLUMN_S_PHYSICAL);
+					removedUser = (String) row.get(COLUMN_S_OLDUSER);
+					
 					// row has been deleted
 					if(user == null) {
 						deleteRules(address);
@@ -341,6 +455,16 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 						updateRules(user, address);
 					}
 				}
+			}
+			if(user != null) {
+				// new hosts have been assigned
+				addBroadcastRules(user);
+			}
+			else if (removedUser != null) {
+				// hosts have been removed
+				// TODO add broadcast rules just once
+				removeBroadcastRules(removedUser); // remove all broadcast rules
+				addBroadcastRules(removedUser); // add broadcast rules for hosts still in the pool
 			}
 		}		
 	}

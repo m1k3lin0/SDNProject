@@ -150,6 +150,7 @@ public final class SDNUtils {
 			virtualAddr = SDNProject.FIRST_VIRTUAL_ADDR + i/256 + "." + i%256; 
 			row.put(SDNProject.COLUMN_S_USER, user);
 			row.put(SDNProject.COLUMN_S_VIRTUAL, virtualAddr);
+			row.put(SDNProject.COLUMN_S_OLDUSER, user);
 			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
 			log.info("Assigned server with ID [" + ID + "] to user {}. Virtual Address: {}", user, virtualAddr);
 		}
@@ -258,11 +259,15 @@ public final class SDNUtils {
 	 * finds the addresses belonging to the specified user
 	 * @param storageSource is reference to the storage source containing the table
 	 * @param user is the user whose servers are to be checked
+	 * @param remove specifies if the function is called after a remove or after an update
 	 * @return a list of the addresses belonging to the user
 	 * */
 	public static List<String> getPoolAddresses(IStorageSourceService storageSource, String user) {
 		List<String> addresses = new ArrayList<>();
-		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, OperatorPredicate.Operator.EQ, user);
+		
+		OperatorPredicate predicate = null;
+		predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, OperatorPredicate.Operator.EQ, user);
+		
 		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
 			new String[] {SDNProject.COLUMN_S_PHYSICAL}, predicate, null);
 		Map<String, Object> row;
@@ -289,6 +294,21 @@ public final class SDNUtils {
 		row.put(SDNProject.COLUMN_R_SRC, sourceAddress);
 		row.put(SDNProject.COLUMN_R_DST, destAddress);
 		storageSource.insertRowAsync(SDNProject.TABLE_RULES, row);
+	}
+	
+	/**
+	 * checks if a specific value is already in the specified table
+	 * @param storageSource is the reference to the storage source containing the table
+	 * @param tableName is the name of the table that needs to be checked
+	 * @param column is the name of the column that needs to be checked
+	 * @param value is the value that needs to be searched
+	 * @return true if the specified value is in the table, false otherwise
+	 * */
+	public static boolean alreadyInTable(IStorageSourceService storageSource, String tableName, String column, String value){
+		OperatorPredicate predicate = new OperatorPredicate(column, OperatorPredicate.Operator.EQ, value);
+		IResultSet resultSet = storageSource.executeQuery(tableName, new String[] {column}, predicate, null);
+		
+		return resultSet.iterator().hasNext();	
 	}
 	
 }
