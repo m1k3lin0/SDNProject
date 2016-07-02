@@ -78,11 +78,11 @@ public class SDNProjectInfoResource extends ServerResource {
 		/* query the servers table */
 		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, OperatorPredicate.Operator.EQ, user);
 		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
-				new String[] {SDNProject.COLUMN_S_VIRTUAL}, predicate, null);
+				new String[] {SDNProject.COLUMN_S_PUBLIC}, predicate, null);
 		Map<String, Object> row;
 		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
 			row = it.next().getRow();
-			ret += "\"" + row.get(SDNProject.COLUMN_S_VIRTUAL).toString() + "\"";
+			ret += "\"" + row.get(SDNProject.COLUMN_S_PUBLIC).toString() + "\"";
 			if(it.hasNext())
 				ret += ",";
 		}

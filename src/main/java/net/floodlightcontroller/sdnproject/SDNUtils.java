@@ -127,38 +127,34 @@ public final class SDNUtils {
 	
 	/**
 	 * assigns requested server to a specific user by updating the servers table
-	 * assigns new virtual addresses, starting from 1 if it is a new request
+	 * assigns new virtual domains, starting from 1 if it is a new request
 	 * starting from the last one if it is an add request
 	 * @param servers is the number of servers requested
 	 * @param user is the user requiring the servers
 	 * @param storageSource is reference to the storage source containing the table
 	 * */
 	public static void assignServers(IStorageSourceService storageSource, int servers, String user) {
-		String virtualAddr = null;
+		String domain = null;
 		int previous = 0;
 		// if user already existent, start from last assigned virtual address
 		if(userExists(storageSource, user)) {
 			previous = getServers(storageSource, user);
 		}
 		for(int i=previous+1; i<=(servers+previous); i++) {
-			if(i%256 ==0 ) {
-				servers++;
-				continue;
-			}
 			Map<String,Object> row = new HashMap<String,Object>();
 			Integer ID = SDNUtils.getFirstFreeServer(storageSource);
-			virtualAddr = SDNProject.FIRST_VIRTUAL_ADDR + i/256 + "." + i%256; 
+			domain = SDNProject.DOMAIN + user + "/" + i; 
 			row.put(SDNProject.COLUMN_S_USER, user);
-			row.put(SDNProject.COLUMN_S_VIRTUAL, virtualAddr);
+			row.put(SDNProject.COLUMN_S_PUBLIC, domain);
 			row.put(SDNProject.COLUMN_S_OLDUSER, user);
 			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
-			log.info("Assigned server with ID [" + ID + "] to user {}. Virtual Address: {}", user, virtualAddr);
+			log.info("Assigned server with ID [" + ID + "] to user {}. Public Address: {}", user, domain);
 		}
 	}
 	
 	/**
 	 * remove a certain number of server from the specified client by resetting to null
-	 * fields user and virtual_address relative to the entries with the highest virtual_addresses
+	 * fields user and public_addresses relative to the entries with the highest virtual_addresses
 	 * @param servers is the number of servers to remove
 	 * @param user is the user removing the servers
 	 * @param storageSource is reference to the storage source containing the table
@@ -172,7 +168,7 @@ public final class SDNUtils {
 			Map<String,Object> row = new HashMap<String,Object>();
 			Integer ID = getLastAssignedServerID(storageSource, user);
 			row.put(SDNProject.COLUMN_S_USER, null);
-			row.put(SDNProject.COLUMN_S_VIRTUAL, null);
+			row.put(SDNProject.COLUMN_S_PUBLIC, null);
 			storageSource.updateRow(SDNProject.TABLE_SERVERS, ID, row);
 			log.info("Removed server " + ID + " from user {}", user);
 		}
@@ -186,18 +182,18 @@ public final class SDNUtils {
 	 * */
 	public static int getLastAssignedServerID(IStorageSourceService storageSource, String user) {
 		Integer ID = 0;
-		String max = "0.0.0.0";
+		String max = "foo/0";
 		OperatorPredicate predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, OperatorPredicate.Operator.EQ, user);
 		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
-			new String[] {SDNProject.COLUMN_S_ID, SDNProject.COLUMN_S_VIRTUAL}, predicate, null);
+			new String[] {SDNProject.COLUMN_S_ID, SDNProject.COLUMN_S_PUBLIC}, predicate, null);
 		Map<String, Object> row;
 		
 		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
 			row = it.next().getRow();
-			String address = (String) row.get(SDNProject.COLUMN_S_VIRTUAL);
-			if(isHigher(address, max)) {
+			String domain = (String) row.get(SDNProject.COLUMN_S_PUBLIC);
+			if(isHigher(domain, max)) {
 				// address is higher than max
-				max = address;
+				max = domain;
 				ID = (Integer) row.get(SDNProject.COLUMN_S_ID);
 			}
 		}
@@ -206,26 +202,17 @@ public final class SDNUtils {
 	}
 	
 	/**
-	 * compares two IP addresses
-	 * @param newIP is the first IP address
-	 * @param oldIP is the second IP address
-	 * @return true if newIP is higher than oldIP 
+	 * compares two domains
+	 * @param newDomain is the first domain
+	 * @param oldDomain is the second domain
+	 * @return true if newDomain is higher than oldDomain, false otherwise
 	 * */
-	private static boolean isHigher(String newIP, String oldIP) {
-		String splittedNew[] = newIP.split("\\.");
-		String splittedOld[] = oldIP.split("\\.");
-		int oldInt = Integer.parseInt(splittedOld[2]);
-		int newInt = Integer.parseInt(splittedNew[2]);
+	private static boolean isHigher(String newDomain, String oldDomain) {
+		String splittedNew[] = newDomain.split("/");
+		String splittedOld[] = oldDomain.split("/");
+		int oldInt = Integer.parseInt(splittedOld[1]);
+		int newInt = Integer.parseInt(splittedNew[1]);
 		
-		//check penultimate part of the address
-		if(newInt > oldInt)
-			return true;
-		if(newInt < oldInt)
-			return false;
-		
-		//check last part of the address
-		oldInt = Integer.parseInt(splittedOld[3]);
-		newInt = Integer.parseInt(splittedNew[3]);
 		if(newInt > oldInt)
 			return true;
 		return false;		
@@ -269,12 +256,12 @@ public final class SDNUtils {
 		predicate = new OperatorPredicate(SDNProject.COLUMN_S_USER, OperatorPredicate.Operator.EQ, user);
 		
 		IResultSet resultSet = storageSource.executeQuery(SDNProject.TABLE_SERVERS, 
-			new String[] {SDNProject.COLUMN_S_PHYSICAL}, predicate, null);
+			new String[] {SDNProject.COLUMN_S_PRIVATE}, predicate, null);
 		Map<String, Object> row;
 		
 		for (Iterator<IResultSet> it = resultSet.iterator(); it.hasNext(); ) {
 			row = it.next().getRow();
-			String address = (String) row.get(SDNProject.COLUMN_S_PHYSICAL);
+			String address = (String) row.get(SDNProject.COLUMN_S_PRIVATE);
 			addresses.add(address);
 		}
 		

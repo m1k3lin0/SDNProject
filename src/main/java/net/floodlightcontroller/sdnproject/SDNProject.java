@@ -61,23 +61,31 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
 	protected static Logger log = LoggerFactory.getLogger(SDNProject.class);
 
-	/* network parameters */
-	// parameters are initialized in init() method, according to config file floodlightdeafault.properties
+	/* network parameters
+	 * parameters are initialized in init() method, according to config file floodlightdeafault.properties 
+	 * the network topology follows the tree topology of mininet, defined by two parameters
+	 * 	FANOUT: is the number of hosts/switch connected to the parent
+	 * 	DEPTH : is the level of the tree
+	 * further parameters are
+	 * 	FIRST_PUBLIC_ADDR : is the base from where to start to assign the public ip address to provide the client
+	 * 	FIRST_PRIVATE_ADDR: is the ip address from which mininet starts its sequential assignment
+	 * 	BROADCAST_ADDR	  : is the broadcast address in the private network
+	 * */
 	protected static int FANOUT;
 	protected static int DEPTH;
 	protected static int tot_servers;
 	public static int available_servers;
 
-	public static String FIRST_VIRTUAL_ADDR;
-	public static String FIRST_PHYSICAL_ADDR;
+	public static String DOMAIN;
+	public static String FIRST_PRIVATE_ADDR;
 	public static String BROADCAST_ADDR;
 
 	/* module constants */
 	// table of servers
 	public static final String TABLE_SERVERS 	= "SDNProject_servers";
 	public static final String COLUMN_S_ID		= "ID";
-	public static final String COLUMN_S_PHYSICAL= "physical_address";
-	public static final String COLUMN_S_VIRTUAL = "virtual_address";
+	public static final String COLUMN_S_PRIVATE	= "private_address";
+	public static final String COLUMN_S_PUBLIC 	= "public_address";
 	public static final String COLUMN_S_USER 	= "user";
 	public static final String COLUMN_S_OLDUSER = "old_user";
 	
@@ -103,7 +111,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 
 	/* module private methods */
 	/**
-	 * initializes the servers table with ID and Physical IP address
+	 * initializes the servers table with ID and private IP address
 	 * ID is an incremental number, starting from 1
 	 * IP address is assigned in an incremental manner starting from 10.0.0.1
 	 * all other fields are filled with null values
@@ -121,9 +129,9 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 			// prepare row
 			Map<String,Object> row = new HashMap<String,Object>();			
 			row.put(COLUMN_S_ID, ID);
-			row.put(COLUMN_S_PHYSICAL, FIRST_PHYSICAL_ADDR + i/256 +"." + (i%256));
+			row.put(COLUMN_S_PRIVATE, FIRST_PRIVATE_ADDR + i/256 +"." + (i%256));
 			row.put(COLUMN_S_USER, null);
-			row.put(COLUMN_S_VIRTUAL, null);
+			row.put(COLUMN_S_PUBLIC, null);
 			
 			storageSourceService.insertRow(TABLE_SERVERS, row);
 			ID++;
@@ -147,7 +155,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		}
 		Collections.sort(edgeSwitches); //sort
 		
-		int range = IPv4Address.of(IPAddress).getInt()-IPv4Address.of(FIRST_PHYSICAL_ADDR+"0.1").getInt();
+		int range = IPv4Address.of(IPAddress).getInt()-IPv4Address.of(FIRST_PRIVATE_ADDR+"0.1").getInt();
 		int index = range/FANOUT;
 		
 		int port = (range%FANOUT) + 1;
@@ -443,7 +451,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 				while (it.hasNext()) {
 					Map<String, Object> row = it.next().getRow();
 					user = (String) row.get(COLUMN_S_USER);
-					address = (String) row.get(COLUMN_S_PHYSICAL);
+					address = (String) row.get(COLUMN_S_PRIVATE);
 					removedUser = (String) row.get(COLUMN_S_OLDUSER);
 					
 					// row has been deleted
@@ -531,8 +539,8 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		Map<String, String> configParams = context.getConfigParams(this);
 		FANOUT = Integer.parseInt(configParams.get("fanout"));
 		DEPTH = Integer.parseInt(configParams.get("depth"));
-		FIRST_PHYSICAL_ADDR = configParams.get("phy_ipbase");
-		FIRST_VIRTUAL_ADDR = configParams.get("vir_ipbase");
+		FIRST_PRIVATE_ADDR = configParams.get("private_ipbase");
+		DOMAIN = configParams.get("domain");
 		BROADCAST_ADDR = configParams.get("bcast_address");
 		tot_servers = (int) Math.pow(FANOUT, DEPTH);
 	}
@@ -570,7 +578,7 @@ public class SDNProject implements IOFMessageListener, IFloodlightModule, IStora
 		storageSourceService.addListener(TABLE_SERVERS, this);
 		log.info("Created table {}", TABLE_SERVERS);
 
-		//add entries to the servers table (all the server physical addresses and IDs)
+		//add entries to the servers table (all the server private addresses and IDs)
 		initServersTable();
 }
 
